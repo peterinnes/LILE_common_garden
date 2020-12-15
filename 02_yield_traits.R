@@ -17,6 +17,10 @@ library(rstanarm)
 env_data <- read.csv("LILE_seed_collection_spreadsheet.csv", header=T) 
 env_data$source %<>% as.factor
 env_data$population %<>% as.factor
+# scale the predictors
+env_data$Lat_s <- scale(env_data$Lat)
+env_data$Long_s <- scale(env_data$Long)
+env_data$Elev_m_s <- scale(env_data$Elev_m)
 
 # seed weight data
 sd_wt_data <- read.csv("cleaned_LILE_yield_data_2013_seed_wt.csv", header = T)
@@ -32,10 +36,7 @@ sd_wt_data <- filter(sd_wt_data, is.na(notes)) #filter out rows with fewer than 
 sd_wt_data <- sd_wt_data %>% 
   dplyr::select(!notes) %>%
   filter(!source %in% c(2,5,32,38)) %>% # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41)
-  left_join(dplyr::select(env_data,source, population, Lat, Long, Elev_m))
-sd_wt_data$Lat_s <- scale(sd_wt_data$Lat)
-sd_wt_data$Long_s <- scale(sd_wt_data$Long)
-sd_wt_data$Elev_m <- scale(sd_wt_data$Elev_m)
+  left_join(dplyr::select(env_data,source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
 
 # fruit fill data
 ff_data <- read.csv("cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T)
@@ -49,10 +50,9 @@ Appar <- ff_data %>% # list of individual Appar plants as noted in Frt Fill data
 
 ff_data <- ff_data %>% 
   filter(trt=="B") %>%  #filter out 'trt A' (non-study/non-harvested plants). 
-  filter(!source %in% c(2,5,32,38)) %>% #exclude mistaken Appar sources
-  filter(is.na(notes) | notes!="Appar") %>% #also filter out individual plants labeled as 'Appar' in the notes column—mostly in source 22
-  left_join(dplyr::select(env_data,source,population,Lat,Long,Elev_m)) %>% #add population ID, latitude, long,elev
-  mutate(Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m))
+  filter(!source %in% c(2,5,32,38)) %>%
+  anti_join(Appar) %>% #also filter out individual plants labeled as 'Appar' in the notes column—mostly in source 22. only two plants left in source 22...
+  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
 # stem and fruit data
 stem_data <- read.csv("cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T)
@@ -60,10 +60,9 @@ stem_data$source %<>% as.factor
 stem_data$block %<>% as.factor
 stem_data <- stem_data %>% 
   filter(trt=="B") %>%
-  filter(!source %in% c(2,5,32,38)) %>% #still need to filter out individual Appar plants
-  left_join(dplyr::select(env_data,source,population, Lat, Long, Elev_m)) %>%
-  anti_join(Appar) %>%
-  mutate(Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m))
+  filter(!source %in% c(2,5,32,38)) %>% 
+  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) %>%
+  anti_join(Appar)
 
 #### EDA
 # histograms
@@ -95,10 +94,10 @@ sw_summ <-
   summarise(mean=mean(sd_wt_50_ct), sd=sd(sd_wt_50_ct), n=n(), min=min(sd_wt_50_ct), max=max(sd_wt_50_ct))
 
 sn_summ <- stem_data %>%
-  dplyr::select(population,block,row,plot,plant,num_of_stems) %>%
+  dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>%
   unique() %>%
   na.omit() %>%
-  group_by(population) %>%
+  group_by(population, source) %>%
   summarise(mean=mean(num_of_stems),se=sd(num_of_stems)/sqrt(n()), cv=100*(sd(num_of_stems)/mean(num_of_stems)), n=n()) #variance is much larger than the mean, so its overdispersed. poisson might not be appropriate. negative binomial instead?
 View(sn_summ)
 
@@ -141,17 +140,26 @@ ff_summ <- ff_data %>%
 # see: https://stackoverflow.com/questions/45788123/general-linear-mixed-effect-glmer-heteroscedasticity-modelling regarding modeling heteroscedasticity 
 
 #### seed weight
-# fit a fixed-effect model, sample sizes are mostly consistent (balanced design), so shrinkage would be minimal/nonexistent anyways. 
+# fit a fixed-effect model, sample sizes are mostly consistent (balanced design), so shrinkage should be minimal anyways. 
 fit_sd_wt <- lmer(sd_wt_50_ct ~ -1 + population + (1|block) + (1|population:block), data = sd_wt_data)# [-(252:253),]) 
 
 fit_sd_wt2 <- lmer(sd_wt_50_ct ~ (1|population) + (1|block) + (1|population:block), data = sd_wt_data)
 
-fit_sd_wt3 <- lmer(sd_wt_50_ct ~ Lat_s + population + (1|block) + (1|population:block), data = sd_wt_data)
+fit_sd_wt3 <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data = sd_wt_data, REML = FALSE) #Lat and Long as poplation-level predictors.
 
 # bayesian 
-bayes_sd_wt <- stan_lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, iter=8000) #alternate Bayesian approac, parameterization with Lat as a poplation-level predictor. It's giving mean of 0 for nearly every parameter though, or the chains won't mix, or effective sample size too small. WHy??
+bayes_sd_wt <- stan_lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, iter=8000) #Bayesian version of fit_sd_wt3
 
 summary(fit_sd_wt) #notice right-skew of residuals.
+# compare pop means fixed vs random
+sw_mod_comps <- cbind(fixef(fit_sd_wt), coef(fit_sd_wt2)$population) %>%
+  rename("coef(fit_sd_wt2)"="(Intercept)") %>%
+  tibble::rownames_to_column("population")
+sw_mod_comps$population <- gsub("population", "", sw_mod_comps$population)
+
+coef_fit_sd_wt3 <- coef(fit_sd_wt3)$population[1] %>%
+  tibble::rownames_to_column("population")
+sw_mod_comps <- full_join(sw_mod_comps, coef_fit_sd_wt3)
 
 # sd wt diagnostic plots
 plot(fit_sd_wt) #looks okay except for a couple outliers in the mid-range.
@@ -212,8 +220,7 @@ plot(fit_ff2) #this looks better?
 qqnorm(resid(fit_ff2)) #about the same as first fit
 ff2_resid <- data.frame(resid=resid(fit_ff2))
 ggplot(data=ff2_resid, aes(x=resid, y=stat(density))) +
-  geom_histogram(bins = 100) #resids normal-ish but skewed left.
-
+  geom_histogram(bins = 100) #resids skewed left
 # gather means
 ff_means <- as.data.frame(fixef(fit_ff)) %>%
   tibble::rownames_to_column(c("population")) %>%
@@ -380,13 +387,13 @@ caps_diam_means$population <- gsub("population", "",caps_diam_means$population)
 # the method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block) Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. 
 
 a <- stem_data %>%
-  dplyr::select(population,block,row,plot,plant,num_of_stems) %>% 
+  dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
   unique() #%>% #in some cases there are two plants per block, due to sampling methods top 8 vigourous plants across all blocks selected as the 'trt B' study plants.
 #group_by(source,block) %>%
 #summarise(num_stems=mean(num_of_stems))
 
 b <- stem_data %>%
-  group_by(population,block,row,plot,plant) %>%
+  group_by(source,population,block,row,plot,plant) %>%
   summarise(fruit_per_stem=mean(na.omit(fruits)), #mean number fruits, number buds and flowers, number forks, capsule diam, and stem diam, for individual plants.
             bds_flws_per_stem=mean(na.omit(bds_flow)),
             forks=mean(na.omit(forks)),
@@ -394,17 +401,26 @@ b <- stem_data %>%
             stem_diam=mean(na.omit(diam_stem))) 
 
 c <- ff_data %>% #in some cases there are two plants per block
-  group_by(population,block,row,plot,plant) %>%
+  group_by(source,population,block,row,plot,plant) %>%
   dplyr::select(population,block,row,plot,plant,good_fill) %>%
   na.omit()
 
 d <- sd_wt_data %>%
-  group_by(population,block) %>%
+  group_by(source,population,block) %>%
   summarise(sd_wt_50_ct=mean(sd_wt_50_ct)) #take average at the pooled population:block level
 
-yield_df <- inner_join(a,b)
-yield_df <- inner_join(yield_df,c)
-yield_df <- inner_join(yield_df,d)
+# check sample sizes
+a_n <- a %>% na.omit() %>% group_by(source, population) %>% summarise(a_n=n())
+b_n <- b %>% na.omit() %>% group_by(source,population,block,row,plot,plant) %>% na.omit() %>% unique() %>%
+  group_by(source,population) %>% summarise(b_n=n())
+c_n <- c %>% na.omit() %>% group_by(source,population,block,row,plot,plant) %>% 
+  unique() %>% group_by(source, population) %>% summarise(c_n=n())
+d_n <- d %>% na.omit() %>% group_by(source,population,block) %>% unique() %>% group_by(source,population) %>% na.omit() %>% summarise(d_n=n())
+abcd_n <- full_join(a_n,b_n) %>% full_join(c_n) %>% full_join(d_n) #the mismatches in missing data between a/b/c and d are causing the reduction in population level sample sizes for the estimated yield data, compared to the individual trait data. a/b/c all match. unfortunate, but it's what we've got I suppose.
+
+yield_df <- full_join(a,b)
+yield_df <- full_join(yield_df,c)
+yield_df <- full_join(yield_df,d)
 yield_df <- yield_df %>%
   mutate(EST_YIELD = num_of_stems 
          * (fruit_per_stem + bds_flws_per_stem) 
@@ -414,23 +430,36 @@ yield_df <- yield_df %>%
   #sample_n(1) %>% #randomly select one plant if there are multiple plants per 'source x block' so that we don't have to nest population and block in the model
   arrange(as.character(population)) 
 
+# yield brief EDA
+yield_summ <- yield_df %>%
+  group_by(source,population) %>%
+  na.omit() %>%
+  summarise(mean=mean(EST_YIELD), se=sd(EST_YIELD)/sqrt(n()), n=n())
+
 # yield linear model
 fit_yield <- lmer(EST_YIELD ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
 summary(fit_yield)
 yield_fit_summary <- summary(fit_yield)
 
-fit_log_yield <- lmer(log(EST_YIELD) ~ -1 + population + (1|block) + (1|population:block), data=yield_df) 
+fit_log_yield <- lmer(log(EST_YIELD) ~ -1+ population + (1|block) + (1|population:block), data=yield_df) 
 ly_fit_summary <- summary(fit_log_yield)
 
-fit_yield_glmer <- glmer(EST_YIELD ~ -1 + population + (1|block) + (1|population:block), family = gaussian(link="log"), data=yield_df) #failed to converge
+fit_log_yield2 <- lmer(log(EST_YIELD) ~ (1|population) + (1|block) + (1|population:block), data=yield_df) 
 
+fit_yield_glmer <- glmer(EST_YIELD ~ (1|population) + (1|block) + (1|population:block), family=Gamma(link="log"), data=yield_df) #fails to converge when population is a fixed effect.
+summary(fit_yield_glmer)
+
+# compare yield estimates from dif models
+cbind(exp(coef(fit_yield_glmer)$population), exp(coef(fit_log_yield2)$population), exp(fixef(fit_log_yield)), fixef(fit_yield))
 
 # diagnostics
-plot(fit_yield) #doesn't look great, classic megaphone effect
+plot(fit_yield) #doesn't look great, slight megaphone effect. but maybe okay?
 plot(fit_log_yield) #log transform looks better
+plot(fit_yield_glmer) #gamma distro also looks good
 
 qqnorm(resid(fit_yield)) #actually looks fine
 qqnorm(resid(fit_log_yield)) #bout the same as untransformed
+qqnorm(resid(fit_yield_glmer))
 
 yield_resid <- data.frame(resid=resid(fit_yield))
 ggplot(data=yield_resid, aes(x=resid, y=stat(density))) +
@@ -461,7 +490,7 @@ ggplot(data=yield_df, aes(x=EST_YIELD, y=reorder(population, EST_YIELD), xmin=lw
   ylab("population") +
   xlab("mean estimated seed yield (g/plant) ± 95%CI")
 
-# Tukey post-hoc test all pairwise comparisons
+#### Tukey post-hoc test all pairwise comparisons
 post_hoc <- emmeans(fit_yield, list(pairwise ~ population), adjust = "tukey", lmer.df = "satterthwaite")
 contrasts <- post_hoc$`pairwise differences of population` %<>% 
   as.data.frame %>%
@@ -477,7 +506,6 @@ mg_contrasts <- post_hoc_MG$contrasts %<>%
 
 #### Trait correlations. Brent wants me to calculate correlations based on the population means (right now they are calculated at the individual plant (ish) level. Good to aggregate into means, or no?
 install.packages("ggcorrplot")
-
 
 trait_means_df <- inner_join(ns_means, fruit_means) %>%
   inner_join(ff_means) %>%

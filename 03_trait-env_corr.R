@@ -19,6 +19,10 @@ env_data$population %<>% as.factor
 
 env_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
   filter(!is.na(Lat) | !is.na(Long)) #keep only rows that have coordinates. still need to get missing lat/long data from Stan.
+# scale the predictors
+env_data$Lat_s <- scale(env_data$Lat)
+env_data$Long_s <- scale(env_data$Long)
+env_data$Elev_m_s <- scale(env_data$Elev_m)
 
 #### get climate data from WorldClim
 # combine temp and precip to give a drought 'potential evaporation and transpiration' there is a formula for this?
@@ -109,13 +113,13 @@ summary(fit_Lat)
   fit_LaLoE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
   
 fit_LaLoE_LaxLo_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + 
-                               Lat:Long + Lat:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+                               Lat_s:Long + Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
 
 fit_LaLoE_LaxLo_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
                              Lat_s:Long_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
 
 fit_LaLoE_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                            Lat:Elev_m_s + Long:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+                            Lat_s:Elev_m_s + Long:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
 
 fit_LaLoE_LaxLo_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
                                   Lat_s:Long_s + Lat_s:Elev_m_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
@@ -150,6 +154,14 @@ LaxLo_ranefs <- coef(fit_LaxLo)$population[1] %>%
 ranefs <- full_join(ranefs, LaxLo_ranefs)
 ranefs <- inner_join(ranefs, dplyr::select(env_data, population, Lat, Long))
 
+#### sw vs temp and precip
+sw_clim_data <- sd_wt_data %>% left_join(dplyr::select(clim_df, population,CHELSA_bio10_09, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
+  rename("TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
+  mutate(MAT_s=scale(MAT), MAP_s=scale(MAP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
+
+fit_sw_clim2 <- lmer(sd_wt_50_ct ~ TDQ_s*PDQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) # TDQ and interaction are significant.
+fit_sw_clim3 <- lmer(sd_wt_50_ct ~ TWQ_s*PWQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TWQ and interaction are significant
+summary(fit_sw_clim) 
 
 #### aggregated number of stems vs geo
 plot(back_trans_mean_stem_num ~ Lat, data=trait_env_df)
