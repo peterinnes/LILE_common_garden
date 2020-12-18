@@ -12,13 +12,16 @@ library(sp)
 library(remotes)
 library(climatedata)
 library(AICcmodavg)
+library(magrittr)
+library(lme4)
+library(arm) #for se.ranef()
 
 env_data <- read.csv("LILE_seed_collection_spreadsheet.csv", header=T) 
 env_data$source %<>% as.factor
 env_data$population %<>% as.factor
 
 env_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
-  filter(!is.na(Lat) | !is.na(Long)) #keep only rows that have coordinates. still need to get missing lat/long data from Stan.
+  filter(!is.na(Lat) | !is.na(Long)) #keep only rows that have coordinates. missing coords for source 37. Appar doesn't have coords
 # scale the predictors
 env_data$Lat_s <- scale(env_data$Lat)
 env_data$Long_s <- scale(env_data$Long)
@@ -157,11 +160,37 @@ ranefs <- inner_join(ranefs, dplyr::select(env_data, population, Lat, Long))
 #### sw vs temp and precip
 sw_clim_data <- sd_wt_data %>% left_join(dplyr::select(clim_df, population,CHELSA_bio10_09, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
   rename("TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
-  mutate(MAT_s=scale(MAT), MAP_s=scale(MAP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
+  mutate(TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
 
 fit_sw_clim2 <- lmer(sd_wt_50_ct ~ TDQ_s*PDQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) # TDQ and interaction are significant.
 fit_sw_clim3 <- lmer(sd_wt_50_ct ~ TWQ_s*PWQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TWQ and interaction are significant
 summary(fit_sw_clim) 
+
+# extract population-level means from REML fit using coef()
+# First need a simple data frame of population coordinates to be used later on in model equation.
+clims <- clim_df %>%
+  na.omit() %>%
+  dplyr::select(population, CHELSA_bio10_09, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18) %>%
+  rename("TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
+  mutate(TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ)) %>%
+  arrange(population)
+
+ml_pred_df <- data.frame(coef(fit_sw_clim3)$population,
+                         se.ranef(fit_sw_clim3)$population[,1])
+names(ml_pred_df) <- c("pop_b0", "b1", "b2", "b3", "pop_b0_se")
+ml_pred_df <- ml_pred_df %>%
+  tibble::rownames_to_column("population") %>%
+  inner_join(clims)
+
+# Calculate intercepts for each population 
+ml_pred_df$pop_b0 <- ml_pred_df$pop_b0 + ml_pred_df$b1*ml_pred_df$TWQ_s + ml_pred_df$b2*ml_pred_df$PWQ_s + ml_pred_df$b3*ml_pred_df$TWQ_s*ml_pred_df$PWQ_s
+
+# Pot
+plot_sw_clim3 <- ggplot(data=ml_pred_df) +
+  geom_abline(intercept=fixef(fit_sw_clim3)[1], slope=fixef(fit_sw_clim3)[3], col="blue", lty=2) +
+  geom_point(mapping=aes(x=TWQ_s, y=pop_b0)) +
+  geom_linerange(mapping=aes(x=TWQ_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
+  labs(x="Mean Temp Warmest Quarter (scaled)", y="Estimated intercept in population l")
 
 #### aggregated number of stems vs geo
 plot(back_trans_mean_stem_num ~ Lat, data=trait_env_df)

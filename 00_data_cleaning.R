@@ -1,6 +1,6 @@
 setwd("~/Desktop/FLAX/LILE_common_garden_proj")
 
-data <- read.csv("raw_data/LILE_yield_data_2013_seed_wt.csv", header=T, na.strings = c("","NA")) #use na.strings to fill blank cells with NA
+sw_data <- read.csv("raw_data/LILE_yield_data_2013_seed_wt.csv", header=T, na.strings = c("","NA")) #use na.strings to fill blank cells with NA
 
 library(dplyr)
 
@@ -15,45 +15,55 @@ for(i in 1:length(test)){
 }
 
 # test on a single column
-head(data$source)
-for(i in 1:length(data$source)){
-  #print(data$source[i])
-  if(is.na(data$source[i]) & is.na(data$source[i+1])){
-    data$source[i] <- data$source[i-1]
+head(sw_data$source)
+for(i in 1:length(sw_data$source)){
+  #print(sw_data$source[i])
+  if(is.na(sw_data$source[i]) & is.na(sw_data$source[i+1])){
+    sw_data$source[i] <- sw_data$source[i-1]
   }
 }
 
 # run on the seed weight data
-for(i in 1:(ncol(data)-3)){ #skip the last three columns because they don't need to be filled
-  for(j in 1:length(data[,i])){ #iterate over elements in ith column
-    if(is.na(data[,i][j]) & is.na(data[,i][j+1])){ #if an element is na and the next element is also na, fill in this element with the preceeding value
-      data[,i][j] <- data[,i][j-1]
+for(i in 1:(ncol(sw_data)-3)){ #skip the last three columns because they don't need to be filled
+  for(j in 1:length(sw_data[,i])){ #iterate over elements in ith column
+    if(is.na(sw_data[,i][j]) & is.na(sw_data[,i][j+1])){ #if an element is na and the next element is also na, fill in this element with the preceeding value
+      sw_data[,i][j] <- sw_data[,i][j-1]
     }
   }
 }
 
 # get rid of spacer rows, which had all NAs in each cell#
-data <- data[rowSums(is.na(data)) != ncol(data),] 
+sw_data <- sw_data[rowSums(is.na(sw_data)) != ncol(sw_data),] 
+
+# fix typo 
+#... <- 0.07
 
 # write df as csv
-write.csv(data, "~/Desktop/FLAX/LILE_common_garden_proj/filled_LILE3_yield_data_2013_seed_wt.csv", row.names = F)
+write.csv(sw_data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE3_yield_data_2013_seed_wt.csv", row.names = F)
 
 #### cleaning fruit fill data
-data <- read.csv("raw_data/LILE_yield_data_2013_fruit_fill.csv", header=T, na.strings = c("","NA"))
+ff_data <- read.csv("raw_data/LILE_yield_data_2013_fruit_fill.csv", header=T, na.strings = c("","NA"))
 
 # remove completely empty rows
-data <- data %>% filter_all(any_vars(!is.na(.)))
+ff_data <- ff_data %>% filter_all(any_vars(!is.na(.)))
 
 # only need to fill in first two columns, 'source' and 'trt'
 for(i in 1:2){ #skip the last three columns because they don't need to be filled
-  for(j in 1:length(data[,i])){ #iterate over elements in ith column
-    if(is.na(data[,i][j])){ #if an element is na and the next element is also na, fill in this element with the preceeding value
-      data[,i][j] <- data[,i][j-1]
+  for(j in 1:length(ff_data[,i])){ #iterate over elements in ith column
+    if(is.na(ff_data[,i][j])){ #if an element is na and the next element is also na, fill in this element with the preceeding value
+      ff_data[,i][j] <- ff_data[,i][j-1]
     }
   }
 }
-View(data)
-write.csv(data, "~/Desktop/FLAX/LILE_common_garden_proj/cleaned_LILE_yield_data_2013_fruit_fill.csv", row.names = F)
+View(ff_data)
+
+# Fix typos/entry erros
+ff_data$block[37] <- 2 #was incorrectly listed as block 3. 
+ff_data$plant[94] <- 7 #source 7/trtB/block2/row3 was incorrectly listed at plant 2, should be plant 7
+ff_data$block[547] <- 7 #was incorrectly listed as block 8, should be block 7
+# Discrepancy still needing fixed, mismatch b/w ff data and stem data: source 28/block4/row19/plot1/ plants: 2 and 3, or 3 and 4?
+
+write.csv(data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE_yield_data_2013_fruit_fill.csv", row.names = F)
 
 #### stem data
 stem_data <- read.csv("raw_data/LILE_yield_data_2013_stem_and_fruit.csv", header=T, na.strings = c("","NA"))
@@ -72,4 +82,8 @@ for(i in 1:6){ #only need to fill the first 6 columns
 }
 View(stem_data)
 
-write.csv(stem_data, "~/Desktop/FLAX/LILE_common_garden_proj/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", row.names = F)
+# typo corrections
+stem_data$block[3622:3641] <- 7 #had been incorrectly entered as block4
+# Discrepancy still needing fixed, mismatch b/w ff data and stem data: source 28/block4/row19/plot1/ plants: 2 and 3, or 3 and 4?
+
+write.csv(stem_data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", row.names = F)
