@@ -16,16 +16,26 @@ library(magrittr)
 library(lme4)
 library(arm) #for se.ranef()
 
-env_data <- read.csv("LILE_seed_collection_spreadsheet.csv", header=T) 
+env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) 
 env_data$source %<>% as.factor
 env_data$population %<>% as.factor
 
 env_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
-  filter(!is.na(Lat) | !is.na(Long)) #keep only rows that have coordinates. missing coords for source 37. Appar doesn't have coords
+  filter(!source %in% c(2,5,22,32,38)) %>%
+  filter(!is.na(Lat) | !is.na(Long)) #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
+  
 # scale the predictors
 env_data$Lat_s <- scale(env_data$Lat)
 env_data$Long_s <- scale(env_data$Long)
 env_data$Elev_m_s <- scale(env_data$Elev_m)
+
+# check correlations b/w geographic predictors. no correlations.
+plot(env_data$Elev_m_s ~ env_data$Long_s)
+plot(env_data$Elev_m_s ~ env_data$Lat_s)
+plot(env_data$Lat ~ env_data$Long)
+cor.test(env_data$Long, env_data$Elev_m)
+cor.test(env_data$Lat, env_data$Elev_m)
+cor.test(env_data$Long, env_data$Lat)
 
 #### get climate data from WorldClim
 # combine temp and precip to give a drought 'potential evaporation and transpiration' there is a formula for this?
@@ -51,65 +61,7 @@ clim_df <- cbind.data.frame(coordinates(points),values) %>%
   tibble::rownames_to_column("population")
 env_df <- inner_join(env_data, clim_df) 
 
-#gather everything together with seed weight
-trait_env_df <- inner_join(sd_wt_means, env_df) %>%
-  filter(!population %in% c('MAPLE_GROVE')) #exclude Maple Grove because seed size may have been influenced by the selection/breeding process, and also UT_1 is the same source population as Maple Grove, also exlcude repeat collections for UT_4 and UT_5
-
-#trait_env_df$ann_mean_temp <- trait_env_df$ann_mean_temp/10 #temp vars are scaled up by factor of 10 in WorldClim dataset
-#trait_env_df$mean_temp_warmestQ <- trait_env_df$mean_temp_warmestQ/10
-#trait_env_df$mean_temp_driestQ <- trait_env_df$mean_temp_driestQ/10
-
-#### model selection
-# AICc fxn from Brett Melbourne
-AICc <- function(fitmod) {
-  ll <- logLik(fitmod)
-  k <-  attr(ll, "df")
-  n <- attr(ll,"nobs")
-  return( -2 * as.numeric(ll) + 2 * k + 2 * k * (k + 1) / (n - k - 1) )
-}
-# 3-way factor models
-fit_LaxLoxE <- lm(mean_sd_wt_50_ct ~ Lat*Long*Elev_m, data=trait_env_df)
-
-fit_LaLoE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m, data=trait_env_df)
-
-fit_LaLoE_LaxLo_LaxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                             Lat:Long + Lat:Elev_m, data=trait_env_df)
-fit_LaLoE_LaxLo_LoxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                             Lat:Long + Long:Elev_m, data=trait_env_df)
-fit_LaLoE_LaxE_LoxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                            Lat:Elev_m + Long:Elev_m, data=trait_env_df)
-fit_LaLoE_LaxLo_LaxE_LoxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                                  Lat:Long + Lat:Elev_m + Long:Elev_m, data=trait_env_df)
-  
-fit_LaLoE_LaxLo <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                        Lat:Long, data=trait_env_df)
-fit_LaLoE_LaxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                       Lat:Elev_m, data=trait_env_df)
-fit_LaLoE_LoxE <- lm(mean_sd_wt_50_ct ~ Lat + Long + Elev_m +
-                       Long:Elev_m, data=trait_env_df)
-
-# two factor models
-fit_LaxLo <- lm(mean_sd_wt_50_ct ~ Lat*Long, data=trait_env_df)
-fit_LaxE <- lm(mean_sd_wt_50_ct ~ Lat*Elev_m, data=trait_env_df)
-fit_LoxE <-lm(mean_sd_wt_50_ct ~ Long*Elev_m, data=trait_env_df)
-fit_LaLo <- lm(mean_sd_wt_50_ct ~ Lat + Long, data=trait_env_df)
-fit_LaE <-lm(mean_sd_wt_50_ct ~ Lat + Elev_m, data=trait_env_df)
-fit_LoE <- lm(mean_sd_wt_50_ct ~ Long + Elev_m, data=trait_env_df)
-
-# single factor models
-fit_Lat <- lm(mean_sd_wt_50_ct ~ Lat, data=trait_env_df)
-fit_Long <- lm(mean_sd_wt_50_ct ~ Long, data=trait_env_df)
-fit_Elev <- lm(mean_sd_wt_50_ct ~ Elev_m, data=trait_env_df)
-
-models <- list(fit_LaxLoxE, fit_LaLoE, fit_LaLoE_LaxLo_LaxE, fit_LaLoE_LaxLo_LoxE, fit_LaLoE_LaxE_LoxE, fit_LaLoE_LaxLo_LaxE_LoxE, fit_LaLoE_LaxLo, fit_LaLoE_LaxE, fit_LaLoE_LoxE, fit_LaxLo, fit_LaxE, fit_LoxE, fit_LaLo, fit_LaE, fit_LoE, fit_Lat, fit_Long, fit_Elev, fit_no_pred)
-
-model_names <- c('LaxLoxE', 'LaLoE', 'LaLoE_LaxLo_LaxE', 'LaLoE_LaxLo_LoxE', 'LaLoE_LaxE_LoxE', 'LaLoE_LaxLo_LaxE_LoxE', 'LaLoE_LaxLo', 'LaLoE_LaxE', 'LaLoE_LoxE', 'LaxLo', 'LaxE', 'LoxE', 'LaLo', 'LaE', 'LoE', 'Lat', 'Long', 'Elev', 'No_predictor')
-
-aictab(cand.set = models, modnames = model_names) #LaxLo and Lat are essentially the same. LaxLoAICc is -156.16; Lat AICc is -156.12 when UT_4b and UT_5b excluded. When UT_4a and UT_5a excluded, Lat is -155.40, LaxLo is 155.39.
-summary(fit_LaxLo)
-summary(fit_Lat)
-
-#### model comparison--LMM version 
+#### model selectionn--LMM version 
 # 3-way factor models
   fit_LaxLoxE <- lmer(sd_wt_50_ct ~ Lat_s*Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
   
@@ -150,21 +102,31 @@ fit_Elev <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|popula
 # no predictor
 fit_no_pred <- lmer(sd_wt_50_ct ~ (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
 
-# LMM model comparison results: fit_LaxLo is best. agrees with simpler approach
+# LMM model comparison results: fit_LaxLo is best
 LaxLo_ranefs <- coef(fit_LaxLo)$population[1] %>%
   rename("fit_LaxLo"="(Intercept)") %>%
   tibble::rownames_to_column("population")
 ranefs <- full_join(ranefs, LaxLo_ranefs)
 ranefs <- inner_join(ranefs, dplyr::select(env_data, population, Lat, Long))
 
-#### sw vs temp and precip
-sw_clim_data <- sd_wt_data %>% left_join(dplyr::select(clim_df, population,CHELSA_bio10_09, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
-  rename("TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
-  mutate(TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
+#### sw vs temp and precip, fork vs temp and precip
 
-fit_sw_clim2 <- lmer(sd_wt_50_ct ~ TDQ_s*PDQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) # TDQ and interaction are significant.
+sw_clim_data <- sd_wt_data %>% left_join(dplyr::select(clim_df, population, CHELSA_bio10_01,CHELSA_bio10_09, CHELSA_bio10_12, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
+  rename("MAT"="CHELSA_bio10_01", "AP"="CHELSA_bio10_12", "TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
+  mutate(MAT_s=scale(MAT), AP_s=scale(AP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
+
+fit_sw_clim <- lmer(sd_wt_50_ct ~ MAT_s*AP_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #only MAT is significant
+fit_sw_clim2 <- lmer(sd_wt_50_ct ~ TDQ_s*PDQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TDQ and interaction are significant.
 fit_sw_clim3 <- lmer(sd_wt_50_ct ~ TWQ_s*PWQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TWQ and interaction are significant
 summary(fit_sw_clim) 
+
+forks_clim_data <- stem_data %>% left_join(dplyr::select(clim_df, population, CHELSA_bio10_01,CHELSA_bio10_09, CHELSA_bio10_12, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
+  rename("MAT"="CHELSA_bio10_01", "AP"="CHELSA_bio10_12", "TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
+  mutate(MAT_s=scale(MAT), AP_s=scale(AP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
+
+fit_forks_clim <- lmer(forks ~ TDQ_s*PDQ_s + (1|population) + (1|population:block) + (1|population:block:plant), data = forks_clim_data)
+summary(fit_forks_clim)
+
 
 # extract population-level means from REML fit using coef()
 # First need a simple data frame of population coordinates to be used later on in model equation.
@@ -185,7 +147,7 @@ ml_pred_df <- ml_pred_df %>%
 # Calculate intercepts for each population 
 ml_pred_df$pop_b0 <- ml_pred_df$pop_b0 + ml_pred_df$b1*ml_pred_df$TWQ_s + ml_pred_df$b2*ml_pred_df$PWQ_s + ml_pred_df$b3*ml_pred_df$TWQ_s*ml_pred_df$PWQ_s
 
-# Pot
+# Plot
 plot_sw_clim3 <- ggplot(data=ml_pred_df) +
   geom_abline(intercept=fixef(fit_sw_clim3)[1], slope=fixef(fit_sw_clim3)[3], col="blue", lty=2) +
   geom_point(mapping=aes(x=TWQ_s, y=pop_b0)) +
@@ -210,7 +172,7 @@ coef(fit_sn_all)$population #also wonky. Way too high. I think there are a few p
 fit_clim <- lm(mean_sd_wt_50_ct ~ bio11, data=trait_env_df)
 summary(fit_clim)
 
-#significant slopes with bio2,bio3,bio4,bio11. Still working on re-doing this to calcultate pearson correlation coefficients, then correct for multiple testing.
+# significant slopes with bio2,bio3,bio4,bio11. Still working on re-doing this to calcultate pearson correlation coefficients, then correct for multiple testing.
 bio <- 0
 for (var in names(trait_env_df[,7:25])) {
   bio <- bio + 1
@@ -247,42 +209,61 @@ plot(mean_sd_wt_50_ct ~ bio3, data=trait_env_df)
 #### messing around with PCA/RDA as a multivariate approach.
 install.packages("vegan")
 library(vegan)
-vegan_df <- na.omit(yield_df)
+pop_trait_means <- read.csv("data/pop_trait_means.csv", header = T)
 
-my_rda <- rda(vegan_df[,6:13], scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
-
-biplot(my_rda,
+my_trait_rda <- rda(pop_trait_means[2:9], scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
+biplot(my_trait_rda,
        display = c("sites", 
                    "species"),
        type = c("text",
                 "points"))
-ordihull(my_rda,
-         group = vegan_df$population)
+ordilabel(my_trait_rda, dis="sites", labels=pop_trait_means$population, cex=0.5 )
 
-# next try including climate predictors?
-vegan_df <- inner_join(vegan_df, env_df)
-vegan_traits <- vegan_df[,6:13]
-vegan_clim <- vegan_df[,16:18] # geo variables 16:18, climate vars are 19:37
-my_rda <- rda(vegan_traits, vegan_clim, scale = T)
+summary(my_trait_rda)
+#ordihull(my_rda, group = pop_trait_means$population) 
+
+my_clim_rda <- rda(clim_df[4:22], scale = T)
+biplot(my_clim_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+
+# using base R
+my_pca <- prcomp(clim_df[4:22], scale = T)
+
+# regress traits vs clim PCA
+pop_trait_means <- pop_trait_means %>% filter(!population %in% c('APPAR', '37'))
+sw_clim_fit <- lm(pop_trait_means$seed_weight ~ my_clim_rda$CA$u[,1])
+sw_clim_fit <- lm(pop_trait_means$number_of_stems ~ my_pca$x[,1])
+#prcomp() and rda() give same result. no association b/w seed weight and first PC of the clim data
+summary(sw_clim_fit)
+plot(pop_trait_means$forks_per_stem ~ my_pca$x[,1])
+
+# try combining with climate predictors?
+vegan_df <- inner_join(pop_trait_means, env_df)
+vegan_traits <- vegan_df[,2:9]
+vegan_geo <- vegan_df[,11:13]
+vegan_clim <- vegan_df[,14:32] # geo variables 11:13, climate vars are 14:32
+my_rda <- rda(vegan_traits, vegan_geo, scale = T)
 my_rda
-quartz()
 plot(my_rda, type='n', scaling=1)
 orditorp(my_rda, display='sp', cex=0.5, scaling=1, col='blue')
 text(my_rda, display='cn', col='red')
 
-#### k means clustering
+#### k means clustering. not working currently 1.13.21
 library(cluster)
 library(factoextra)
 library(purrr)
 set.seed(123)
 # function to compute total within-cluster sum of square
-df <- vegan_df[,6:13]
+df <- pop_trait_means
 wss <- function(k) {
-  kmeans(df, k, nstart = 10 )$tot.withinss
+  kmeans(df, k, nstart = 1 )$tot.withinss
 }
 
 # Compute and plot wss for k = 1 to k = 42 (numer of pops)
-k_values <- 1:length(unique(vegan_df$population))
+k_values <- 1:length(unique(df$population))
 
 # extract wss for  clusters
 wss_values <- map_dbl(k_values, wss)
@@ -293,7 +274,7 @@ plot(k_values, wss_values,
      ylab="Total within-clusters sum of squares")
 
 # alternatively, this function wraps everything above into one
-fviz_nbclust(vegan_df[,6:13], kmeans, method = "wss")
+fviz_nbclust(pop_trait_means, kmeans, method = "wss")
 
 # continue with k=4
 clusters <- kmeans(df, 4, nstart = 25)

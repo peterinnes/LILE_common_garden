@@ -2,9 +2,9 @@
 #' output: github_document
 #' ---
 
-#' Individual Project EDA, Data Science Fall 2020
+#' Exploratory Data analysis of LILE traits
 #' author: Peter Innes
-#' date: Nov 3
+#' date: 1.13
 
 #+ results=FALSE, message=FALSE, warning=FALSE
 library(dplyr)
@@ -26,23 +26,23 @@ sd_wt_data$source %<>% as.factor
 sd_wt_data$block %<>% as.factor
 sd_wt_data <- filter(sd_wt_data, is.na(notes)) %>% #filter out observations with fewer than 50 seeds (described in notes column). All other obs are weights of 50 seeds. 
   dplyr::select(!notes) %>% #don't need notes column anymore
-  filter(!source %in% c(2,5,32,38)) %>% # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41)
+  filter(!source %in% c(2,5,22,32,38)) %>% # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41)
   left_join(dplyr::select(env_data,source,population,Lat))
 
-# Read-in fruit fill data. Might not analyze fruit fill for class but including in just in case.
+# Read-in fruit fill data.
 ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T)
 ff_data$source %<>% as.factor
 ff_data$block %<>% as.factor
 
-Appar <- ff_data %>% #list of individual Appar plants to exclude 
+Appar <- ff_data %>% #list of individual Appar plants to exclude. 6 plants from source 22 are listed as Appar. Brent says go ahead and exclude this entire source.
   filter(notes==c("Appar")) %>%
   filter(trt=="B") %>%
   dplyr::select(source,trt,block,row,plot,plant)
+Appar
 
 ff_data <- ff_data %>% 
   filter(trt=="B") %>%  #filter out 'trt A' (non-study/non-harvested plants). 
-  filter(!source %in% c(2,5,32,38)) %>% #exclude mistaken Appar sources
-  filter(is.na(notes) | notes!="Appar") %>% #also filter out individual plants labeled as 'Appar' in the notes column—mostly in source 22. 
+  filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources
   left_join(dplyr::select(env_data,source,population,Lat))  #add population ID, latitude
 
 # Read-in stem data
@@ -51,9 +51,56 @@ stem_data$source %<>% as.factor
 stem_data$block %<>% as.factor
 stem_data <- stem_data %>% 
   filter(trt=="B") %>%
-  filter(!source %in% c(2,5,32,38)) %>%
-  anti_join(Appar) %>% #exclude the same mistaken Appar plants that were noted in the fruit fill data set
+  filter(!source %in% c(2,5,22,32,38)) %>%
   left_join(dplyr::select(env_data,source,population,Lat)) 
+
+# gather traits to estimate Yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block) Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is several cases there are two plants per block, due to sampling methods top 8 vigourous plants across all blocks selected as the 'trt B' study plants.
+a <- stem_data %>%
+  dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
+  unique() #%>% 
+#group_by(source,block) %>%
+#summarise(num_stems=mean(num_of_stems))
+b <- stem_data %>%
+  group_by(source,population,block,row,plot,plant) %>%
+  summarise(fruit_per_stem=mean(na.omit(fruits)), #mean number fruits, number buds and flowers, number forks, capsule diam, and stem diam, for individual plants.
+            bds_flws_per_stem=mean(na.omit(bds_flow)),
+            forks=mean(na.omit(forks)),
+            caps_diam=mean(na.omit(diam_caps)),
+            stem_diam=mean(na.omit(diam_stem))) 
+c <- ff_data %>%
+  group_by(source,population,block,row,plot,plant) %>%
+  dplyr::select(source,population,block,row,plot,plant,good_fill) #%>%
+#na.omit()
+d <- sd_wt_data %>%
+  group_by(source,population,block, row, plot) %>%
+  summarise(sd_wt_50_ct=mean(sd_wt_50_ct)) #take average at the pooled population:block level
+yield_df <- full_join(a,b)
+yield_df <- full_join(yield_df,c)
+yield_df <- full_join(yield_df,d)
+
+# next, impute missing seed weight values so that we can estimate yield: For plants from plots without seed weight data, use the mean of seed weight data from all other plots of its population. 
+for ( i in 1:281 ){
+  pop <- yield_df$population[i]
+  pop_mn <- yield_df %>% filter(population==pop) %>% 
+    dplyr::select(source,row,plot,sd_wt_50_ct) %>%
+    unique() %>%
+    summarise(mean(na.omit(sd_wt_50_ct)))
+  pop_mn %<>% as.numeric()
+  if( is.na(yield_df$sd_wt_50_ct[i]) ){
+    print(yield_df[i,])
+    yield_df$sd_wt_50_ct[i] <- pop_mn
+  }
+}
+
+yield_df <- yield_df %>%
+  na.omit() %>%
+  mutate(EST_YIELD = num_of_stems 
+         * (fruit_per_stem + bds_flws_per_stem) 
+         * good_fill 
+         * (sd_wt_50_ct/50)) %>%
+  group_by(population,block) %>%
+  arrange(as.character(population))
+write.csv(yield_df,file="data/yield_data.csv", row.names = FALSE)
 
 
 #' #### Exploratory data analysis
@@ -146,7 +193,38 @@ sd_wt_data %>%
   geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ block)
 
-#' #### EDA of second trait: number of stems per plant
+#' EDA of fruit fill
+# summary stats for 5 counties
+#+ results=FALSE, message=FALSE, warning=FALSE
+set.seed(7)
+ff5pops <- ff_data %>% 
+  dplyr::select(population,block,good_fill) %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(mean=mean(good_fill), sd=sd(good_fill), n=n(), min=min(good_fill), max=max(good_fill)) %>%
+  sample_n(5)
+ff5pops
+
+#' Normal fitted for the 5 pops
+norm_df <- NULL
+for ( i in 1:5 ) {
+  x <- seq(ff5pops$min[i],ff5pops$max[i],length.out = 100)
+  y <- dnorm(x, ff5pops$mean[i], ff5pops$sd[i])
+  norm_df <- rbind(norm_df,data.frame(x,y,population=ff5pops$population[i]))
+}
+rm(x,y) #clean up
+head(norm_df)
+
+#' plot observed vs fitted. normal distro appears to fit sufficiently well.
+ff_data %>% group_by(population) %>%
+  filter(population%in%ff5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=good_fill, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=good_fill), col="blue") +
+  geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
+#' #### EDA of number of stems per plant
 
 #' Histograms of each trait. For this project, just interested in num_of_stems. The distribution of num_of_stems is skewed right, as expected for count data. Poisson or negative binomial could be a good fit, depending on how the mean and variance compare.
 #+ results=FALSE, message=FALSE, warning=FALSE
@@ -199,51 +277,6 @@ stem_data %>%
 
 
 #' EDA for estimated yield.
-# first, gather all the component traits together, labeled a thru d.
-a <- stem_data %>%
-dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
-  unique() #%>% 
-#group_by(source,block) %>%
-#summarise(num_stems=mean(num_of_stems))
-b <- stem_data %>%
-  group_by(source,population,block,row,plot,plant) %>%
-  summarise(fruit_per_stem=mean(na.omit(fruits)), #mean number fruits, number buds and flowers, number forks, capsule diam, and stem diam, for individual plants.
-            bds_flws_per_stem=mean(na.omit(bds_flow)),
-            forks=mean(na.omit(forks)),
-            caps_diam=mean(na.omit(diam_caps)),
-            stem_diam=mean(na.omit(diam_stem))) 
-c <- ff_data %>%
-  group_by(source,population,block,row,plot,plant) %>%
-  dplyr::select(source,population,block,row,plot,plant,good_fill) #%>%
-#na.omit()
-d <- sd_wt_data %>%
-  group_by(source,population,block, row, plot) %>%
-  summarise(sd_wt_50_ct=mean(sd_wt_50_ct)) #take average at the pooled population:block level
-yield_df <- full_join(a,b)
-yield_df <- full_join(yield_df,c)
-yield_df <- full_join(yield_df,d)
-
-# next, impute missing seed weight values: For plants from plots without seed weight data, use the mean of seed weight data from all other plots of its population. 
-for ( i in 1:282 ){
-  pop <- yield_df$population[i]
-  pop_mn <- yield_df %>% filter(population==pop) %>% 
-    dplyr::select(source,row,plot,sd_wt_50_ct) %>%
-    unique() %>%
-    summarise(mean(na.omit(sd_wt_50_ct)))
-  pop_mn %<>% as.numeric()
-  if( is.na(yield_df$sd_wt_50_ct[i]) ){
-    print(yield_df[i,])
-    yield_df$sd_wt_50_ct[i] <- pop_mn
-  }
-}
-
-yield_df <- yield_df %>%
-  mutate(EST_YIELD = num_of_stems 
-         * (fruit_per_stem + bds_flws_per_stem) 
-         * good_fill 
-         * (sd_wt_50_ct/50)) %>%
-  group_by(population,block) %>%
-  arrange(as.character(population)) 
 yield_summ <- yield_df %>%
   group_by(source,population) %>%
   na.omit() %>%
@@ -306,7 +339,7 @@ for ( i in 1:25 ) {
 rm(x,y) #clean up
 head(gamma_df)
 
-# lognormal fitted
+# lognormal fitted. this distro appears to fit best.
 lognorm_df <- NULL
 for ( i in 1:25 ) {
   x <- seq(yield5pops$logmin[i],yield5pops$logmax[i],length.out = 100)
