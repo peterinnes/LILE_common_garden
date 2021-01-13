@@ -198,6 +198,151 @@ stem_data %>%
 #' Now to decide what distribution to use in modeling number of stems. It appears to be a highly variable trait—variance is much larger than the mean, nearly across the board. This coincides with the distributions being uniform at the population level, for most of the populations. I'm not really sure how to proceed at this point. Negative binomial seems reasonable at the scale of the entire experiment, but when estimating means at the population level, would it still be appropriate? \n
 
 
+#' EDA for estimated yield.
+# first, gather all the component traits together, labeled a thru d.
+a <- stem_data %>%
+dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
+  unique() #%>% 
+#group_by(source,block) %>%
+#summarise(num_stems=mean(num_of_stems))
+b <- stem_data %>%
+  group_by(source,population,block,row,plot,plant) %>%
+  summarise(fruit_per_stem=mean(na.omit(fruits)), #mean number fruits, number buds and flowers, number forks, capsule diam, and stem diam, for individual plants.
+            bds_flws_per_stem=mean(na.omit(bds_flow)),
+            forks=mean(na.omit(forks)),
+            caps_diam=mean(na.omit(diam_caps)),
+            stem_diam=mean(na.omit(diam_stem))) 
+c <- ff_data %>%
+  group_by(source,population,block,row,plot,plant) %>%
+  dplyr::select(source,population,block,row,plot,plant,good_fill) #%>%
+#na.omit()
+d <- sd_wt_data %>%
+  group_by(source,population,block, row, plot) %>%
+  summarise(sd_wt_50_ct=mean(sd_wt_50_ct)) #take average at the pooled population:block level
+yield_df <- full_join(a,b)
+yield_df <- full_join(yield_df,c)
+yield_df <- full_join(yield_df,d)
+
+# next, impute missing seed weight values: For plants from plots without seed weight data, use the mean of seed weight data from all other plots of its population. 
+for ( i in 1:282 ){
+  pop <- yield_df$population[i]
+  pop_mn <- yield_df %>% filter(population==pop) %>% 
+    dplyr::select(source,row,plot,sd_wt_50_ct) %>%
+    unique() %>%
+    summarise(mean(na.omit(sd_wt_50_ct)))
+  pop_mn %<>% as.numeric()
+  if( is.na(yield_df$sd_wt_50_ct[i]) ){
+    print(yield_df[i,])
+    yield_df$sd_wt_50_ct[i] <- pop_mn
+  }
+}
+
+yield_df <- yield_df %>%
+  mutate(EST_YIELD = num_of_stems 
+         * (fruit_per_stem + bds_flws_per_stem) 
+         * good_fill 
+         * (sd_wt_50_ct/50)) %>%
+  group_by(population,block) %>%
+  arrange(as.character(population)) 
+yield_summ <- yield_df %>%
+  group_by(source,population) %>%
+  na.omit() %>%
+  summarise(mean=mean(EST_YIELD), se=sd(EST_YIELD)/sqrt(n()), n=n())
+
+yield_df %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=EST_YIELD,y=stat(density)),bins=30)
+
+ggplot(data=yield_df, aes(x=reorder(population, EST_YIELD), y=EST_YIELD)) +
+  geom_violin(alpha=0.5) + 
+  theme(axis.text.x = element_text(angle=45, size=6))
+
+ggplot(data=yield_df, aes(x=reorder(block, EST_YIELD), y=EST_YIELD)) +
+  geom_violin(alpha=0.5) + 
+  theme(axis.text.x = element_text(angle=45, size=6)) #does not appear to be any block effect. good. 
+
+yield_df %>% 
+  na.omit() %>%
+  mutate(yjit=jitter(0*EST_YIELD)) %>%
+  ggplot() +
+  geom_point(mapping=aes(x=EST_YIELD, col=block, y=yjit),shape=1,alpha=0.5) +
+  facet_wrap(facets = ~ population) +
+  ylim(-0.1,0.1)
+
+yield_df %>% na.omit() %>%
+  group_by(population) %>%
+  summarise(sample_size=n()) %>%
+  arrange(-sample_size) %>%
+  print(n=Inf)
+
+# check fit of different distros
+set.seed(39)
+yield_df <- mutate(yield_df, log_EST_YIELD=log(ifelse(EST_YIELD==0,0.1,EST_YIELD)))
+yield5pops <- yield_df %>% 
+  dplyr::select(population,block,EST_YIELD,log_EST_YIELD) %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(mean=mean(EST_YIELD), sd=sd(EST_YIELD), min=min(EST_YIELD), max=max(EST_YIELD), n=n(), logmean=mean(log_EST_YIELD), logsd=sd(log_EST_YIELD), logmin=min(log_EST_YIELD), logmax=max(log_EST_YIELD)) %>%
+  sample_n(25)
+yield5pops
+
+# normal fitted for the 5 pops
+norm_df <- NULL
+for ( i in 1:25 ) {
+  x <- seq(yield5pops$min[i],yield5pops$max[i],length.out = 100)
+  y <- dnorm(x, yield5pops$mean[i], yield5pops$sd[i])
+  norm_df <- rbind(norm_df,data.frame(x,y,population=yield5pops$population[i]))
+}
+rm(x,y) #clean up
+head(norm_df)
+
+#' gamma fitted for the 5 pops
+gamma_df <- NULL
+for ( i in 1:25 ) {
+  x <- seq(yield5pops$min[i],yield5pops$max[i],length.out = 100)
+  y <- dgamma(x, (yield5pops$mean[i]/yield5pops$sd[i])^2, yield5pops$mean[i]/yield5pops$sd[i]^2)
+  gamma_df <- rbind(gamma_df,data.frame(x,y,population=yield5pops$population[i]))
+}
+rm(x,y) #clean up
+head(gamma_df)
+
+# lognormal fitted
+lognorm_df <- NULL
+for ( i in 1:25 ) {
+  x <- seq(yield5pops$logmin[i],yield5pops$logmax[i],length.out = 100)
+  y <- dnorm(x, yield5pops$logmean[i], yield5pops$logsd[i])
+  lognorm_df <- rbind(lognorm_df,data.frame(x,y,population=yield5pops$population[i]))
+}
+rm(x,y) #clean up
+head(lognorm_df)
+
+yield_df %>%
+  group_by(population) %>%
+  filter(population%in%yield5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=EST_YIELD, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=EST_YIELD), col="blue") +
+  geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
+yield_df %>%
+  group_by(population) %>%
+  filter(population%in%yield5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=EST_YIELD, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=EST_YIELD), col="blue") +
+  geom_line(data=gamma_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
+yield_df %>%
+  group_by(population) %>%
+  filter(population%in%yield5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=log_EST_YIELD, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=log_EST_YIELD), col="blue") +
+  geom_line(data=lognorm_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
 #' EDA misc scraps
 # histograms
 stem_data %>%

@@ -59,9 +59,13 @@ View(ff_data)
 
 # Fix typos/entry erros
 ff_data$block[37] <- 2 #was incorrectly listed as block 3. 
-ff_data$plant[94] <- 7 #source 7/trtB/block2/row3 was incorrectly listed at plant 2, should be plant 7
+ff_data$plant[94] <- 7 #source7/trtB/block2/row7/plot3/plantx was incorrectly listed at plant 2, should be plant 7
 ff_data$block[547] <- 7 #was incorrectly listed as block 8, should be block 7
-# Discrepancy still needing fixed, mismatch b/w ff data and stem data: source 28/block4/row19/plot1/ plants: 2 and 3, or 3 and 4?
+#mismatch b/w ff data and stem data: source 28/block4/row19/plot1/ plants: 2 and 3, or 3 and 4? it should be plants 3 and 4, to match the stem data. Stan verified this.
+ff_data$plant[428] <- 3
+ff_data$plant[429] <- 4
+
+
 
 write.csv(data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE_yield_data_2013_fruit_fill.csv", row.names = F)
 
