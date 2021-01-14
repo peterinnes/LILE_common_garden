@@ -148,7 +148,8 @@ plot_sw_clim3 <- ggplot(data=ml_pred_df) +
 
 #### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
-library(vegan)
+devtools::install_github("gavinsimpson/ggvegan")
+1library(vegan)
 pop_trait_means <- read.csv("data/pop_trait_means.csv", header = T)
 
 my_trait_rda <- rda(pop_trait_means[2:9], scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
@@ -171,7 +172,7 @@ biplot(my_clim_rda,
 summary(my_clim_rda) #PC1 explains 49%, PC2 explains 18.6%, PC3 explains 11.1%
 
 # using base R
-my_pclim_pca <- prcomp(clim_df[4:22], scale = T) #same as vegan RDA above
+my_clim_pca <- prcomp(clim_df[4:22], scale = T) #same as vegan RDA above
 summary(my_pca)
 
 # regress traits vs clim PCA

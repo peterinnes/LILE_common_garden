@@ -15,34 +15,31 @@ library(rstanarm)
 library(arm) #for se.ranef()
 
 # collection/environmental data
-env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) 
-env_data$source %<>% as.factor
-env_data$population %<>% as.factor
-# scale the predictors
-env_data$Lat_s <- scale(env_data$Lat)
-env_data$Long_s <- scale(env_data$Long)
-env_data$Elev_m_s <- scale(env_data$Elev_m)
+env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
+  mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
 
 # seed weight data
-sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header = T)
-sd_wt_data$source %<>% as.factor
-sd_wt_data$block %<>% as.factor
-sd_wt_data <- filter(sd_wt_data, is.na(notes)) #filter out rows with fewer than 50 seeds (described in notes column in spreadsheet, obs with standard 50 seeds have 'NA' in notes column)
+sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header = T) %>%
+  filter(is.na(notes)) %>% #filter out rows with fewer than 50 seeds (described in notes column in spreadsheet, obs with standard 50 seeds have 'NA' in notes column)
+  mutate(source=as.factor(source), block=as.factor(block)) %>%
+  left_join(dplyr::select(env_data, source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
+
 # alternatively, for rows with fewer than 50 seeds, scale the seed weight measurements up to approx 50-count value
 #for(i in 1:length(sd_wt_data$sd_wt_50_ct)){
 #  if(!is.na(sd_wt_data$num_seeds[i])){
 #    sd_wt_data$sd_wt_50_ct[i] <- 1/sd_wt_data$num_seeds[i]*50*sd_wt_data$sd_wt_50_ct[i]
 #  }
 #}
+
 sd_wt_data <- sd_wt_data %>% 
   dplyr::select(!notes) %>%
-  filter(!source %in% c(2,5,22,32,38)) %>% # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
-  left_join(dplyr::select(env_data, source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
+  filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
 
 # fruit fill data
-ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T)
-ff_data$source %<>% as.factor
-ff_data$block %<>% as.factor
+ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T) %>%
+  mutate(source=as.factor(source), block=as.factor(block)) %>%
+  filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
+  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
 Appar <- ff_data %>% # list of individual Appar plants as noted in Frt Fill data. 6 plants from source 22 are listed as Appar. Brent says go ahead and exclude this entire source.
   filter(notes==c("Appar")) %>%
@@ -50,19 +47,17 @@ Appar <- ff_data %>% # list of individual Appar plants as noted in Frt Fill data
   dplyr::select(source,trt,block,row,plot,plant)
 
 ff_data <- ff_data %>% 
-  filter(trt=="B") %>%  #filter out 'trt A' (non-study/non-harvested plants). 
-  filter(!source %in% c(2,5,22,32,38)) %>%
-  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
-
+  filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources 
+  
 # stem and fruit data
-stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T)
-stem_data$source %<>% as.factor
-stem_data$block %<>% as.factor
-stem_data <- stem_data %>% 
+stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T) %>%
+  mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>%
-  filter(!source %in% c(2,5,22,32,38)) %>% 
   left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
+stem_data <- stem_data %>% 
+  filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources
+  
 # read-in yield data (composite of all the other traits, data frame was created in 01_traits_EDA.R script)
 yield_df <- read.csv("data/yield_data.csv", header=T)
 
