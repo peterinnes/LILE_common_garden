@@ -149,7 +149,8 @@ plot_sw_clim3 <- ggplot(data=ml_pred_df) +
 #### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
 devtools::install_github("gavinsimpson/ggvegan")
-1library(vegan)
+library(vegan)
+library(ggvegan)
 pop_trait_means <- read.csv("data/pop_trait_means.csv", header = T)
 
 my_trait_rda <- rda(pop_trait_means[2:9], scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
@@ -159,6 +160,7 @@ biplot(my_trait_rda,
        type = c("text",
                 "points"))
 ordilabel(my_trait_rda, dis="sites", labels=pop_trait_means$population, cex=0.5 )
+autoplot(mmy_trait_rda)
 summary(my_trait_rda)
 
 #ordihull(my_rda, group = pop_trait_means$population) 
