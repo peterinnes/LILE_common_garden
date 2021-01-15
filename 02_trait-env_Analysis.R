@@ -1,6 +1,12 @@
-# trait-environment correlations
-# Peter Innes
-# 10.5.20
+#' ---
+#' output: github_document
+#' ---
+
+#' trait-environment correlations
+#' Peter Innes
+#' 10.5.20 / last updated 1.15.21
+
+#+ results=FALSE, message=FALSE, warning=FALSE
 devtools::install_github("jimhester/archive")
 devtools::install_github("mirzacengic/climatedata")
 install.packages("rgdal")
@@ -16,16 +22,14 @@ library(magrittr)
 library(lme4)
 library(arm) #for se.ranef()
 
-env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) 
-env_data$source %<>% as.factor
-env_data$population %<>% as.factor
+env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
+  mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m))
 
-geo_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
+geo_data <- env_data %>% dplyr::select(source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s) %>%
   filter(!source %in% c(2,5,22,32,38)) %>%
-  filter(!is.na(Lat) | !is.na(Long)) %>% #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
-  mutate(Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
+  filter(!is.na(Lat) | !is.na(Long)) #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
 
-# check correlations b/w geographic predictors. No correlations.
+# check correlations b/w geographic predictors. No significant correlations, that's good.
 plot(geo_data$Elev_m_s ~ geo_data$Long_s)
 plot(geo_data$Elev_m_s ~ geo_data$Lat_s)
 plot(geo_data$Lat ~ geo_data$Long)
@@ -152,18 +156,37 @@ devtools::install_github("gavinsimpson/ggvegan")
 library(vegan)
 library(ggvegan)
 pop_trait_means <- read.csv("data/pop_trait_means.csv", header = T)
+temp <- pop_trait_means[,-1]
+rownames(temp) <- pop_trait_means[,1]
+pop_trait_means <- temp
 
-my_trait_rda <- rda(pop_trait_means[2:9], scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
+my_trait_rda <- rda(pop_trait_means, scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
+summary(my_trait_rda)
+# Base R biplot with labels
 biplot(my_trait_rda,
        display = c("sites", 
                    "species"),
        type = c("text",
                 "points"))
-ordilabel(my_trait_rda, dis="sites", labels=pop_trait_means$population, cex=0.5 )
-autoplot(mmy_trait_rda)
-summary(my_trait_rda)
+ordilabel(my_trait_rda, dis="sites", cex=0.5)
 
-#ordihull(my_rda, group = pop_trait_means$population) 
+
+# ggvegan version
+autoplot(my_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic version
+
+# extract df of PC scores to manually build a plot
+pops_rda <- fortify(my_trait_rda, display='sites')
+traits_rda <- fortify(my_trait_rda, display='species')
+
+ggplot() +
+  geom_point(data=pops_rda, aes(x = PC1, y = PC2)) +
+  geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
+  geom_segment(data=traits_rda, aes(x=0, xend=PC1, y=0, yend=PC2), 
+               color="red", arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text(data=traits_rda, 
+            aes(x=PC1,y=PC2,label=Label,
+                hjust=0.5*(1-sign(PC1)),vjust=0.5*(1-sign(PC2))), 
+            color="red", size=4)
 
 my_clim_rda <- rda(clim_df[4:22], scale = T)
 biplot(my_clim_rda,

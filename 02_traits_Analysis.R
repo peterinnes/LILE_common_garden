@@ -41,11 +41,6 @@ ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T
   filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
   left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
-Appar <- ff_data %>% # list of individual Appar plants as noted in Frt Fill data. 6 plants from source 22 are listed as Appar. Brent says go ahead and exclude this entire source.
-  filter(notes==c("Appar")) %>%
-  filter(trt=="B") %>%
-  dplyr::select(source,trt,block,row,plot,plant)
-
 ff_data <- ff_data %>% 
   filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources 
   
