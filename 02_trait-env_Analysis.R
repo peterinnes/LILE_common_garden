@@ -13,6 +13,7 @@ install.packages("rgdal")
 install.packages("AICcmodavg")
 library(dplyr)
 library(ggplot2)
+library(interactions)
 library(raster)
 library(sp)
 library(remotes)
@@ -149,6 +150,19 @@ plot_sw_clim3 <- ggplot(data=ml_pred_df) +
   geom_point(mapping=aes(x=TWQ_s, y=pop_b0)) +
   geom_linerange(mapping=aes(x=TWQ_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
   labs(x="Mean Temp Warmest Quarter (scaled)", y="Estimated intercept in population l")
+
+# Visualize the interaction effect by turning precip into categorical variable (split into 3 groups)
+ml_pred_df$cat_PWQ_s <- as.factor(as.numeric(cut_number(ml_pred_df$PWQ_s, 3)))
+plot_sw_clim3x <- ggplot(data=ml_pred_df) + 
+  geom_point(mapping=aes(x=TWQ_s, y=pop_b0, color=cat_PWQ_s)) +
+  geom_linerange(mapping=aes(x=TWQ_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se))
+
+interact_plot(fit_sw_clim3, pred=TWQ_s, modx=PWQ_s, interval=TRUE)
+sim_slopes(fit_sw_clim3, pred = TWQ_s, modx = PWQ_s, johnson_neyman = FALSE)
+
+# Geo interaction plot
+interact_plot(fit_LaxLo, pred = Lat_s, modx = Long_s, interval=T, int.width = 0.95)
+  
 
 #### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")

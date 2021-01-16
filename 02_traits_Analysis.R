@@ -32,7 +32,7 @@ sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header =
 #}
 
 sd_wt_data <- sd_wt_data %>% 
-  dplyr::select(!notes) %>%
+  dplyr::select(!c('num_seeds','notes')) %>%
   filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
 
 # fruit fill data
