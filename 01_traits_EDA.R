@@ -18,7 +18,7 @@ library(tidyr)
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
   mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
 
-# Read-in fruit fill data.
+#' Read-in fruit-fill data.
 ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T) %>%
   mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
@@ -40,18 +40,18 @@ sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header =
   left_join(dplyr::select(env_data, source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
 sd_wt_data <- sd_wt_data %>% 
   dplyr::select(!notes) %>% #don't need this column anymore
-  filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
+  filter(!source %in% c(2,5,22,32,38)) # exclude mistaken Appar sources
 
 #' Read-in stem data
-stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T)
-stem_data$source %<>% as.factor
-stem_data$block %<>% as.factor
-stem_data <- stem_data %>% 
+stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T) %>%
+mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>%
-  filter(!source %in% c(2,5,22,32,38)) %>%
-  left_join(dplyr::select(env_data,source,population,Lat)) 
+  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
-#' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
+stem_data <- stem_data %>% 
+  filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources
+
+#' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is that in quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
 a <- stem_data %>%
   dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
   unique() #%>% 
@@ -74,6 +74,7 @@ d <- sd_wt_data %>%
 yield_df <- full_join(a,b)
 yield_df <- full_join(yield_df,c)
 yield_df <- full_join(yield_df,d)
+head(yield_df)
 
 #' Next, impute missing seed weight values so that we can estimate yield for plants that have trait data for everything except seed weight: use the mean seed weight from all other plots of its population.
 for ( i in 1:281 ){
@@ -115,7 +116,7 @@ stem_data %>%
 #' Histograms from fruit fill data. All histos look the same (except bad seeds) bc they are essentially different measures of the same trait. We'll only look at good_fill for subsequent analyses.
 #+ results=FALSE, message=FALSE, warning=FALSE
 ff_data %>%
-  select(good_sds,bad_sds,tot_sds,good_fill,tot_fill) %>%
+  dplyr::select(good_sds,bad_sds,tot_sds,good_fill,tot_fill) %>%
   gather(key="trait", value="trait_value") %>%
   ggplot() +
   geom_histogram(mapping=aes(x=trait_value,y=stat(density)), bins=30) +
@@ -211,9 +212,7 @@ sd_wt_data %>%
   geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ block)
 
-#' EDA of fruit fill
-
-#' Summary stats for 5 counties
+#' EDA of fruit fill. Same steps as above
 #+ results=FALSE, message=FALSE, warning=FALSE
 set.seed(7)
 ff5pops <- ff_data %>% 
@@ -234,7 +233,7 @@ for ( i in 1:5 ) {
 rm(x,y) #clean up
 head(norm_df)
 
-#' plot observed vs fitted. normal distro appears to fit sufficiently well.
+#' Plot observed vs fitted. normal distro appears to fit sufficiently well.
 ff_data %>% group_by(population) %>%
   filter(population%in%ff5pops$population) %>%
   ggplot() +
@@ -281,14 +280,14 @@ stems %>%
   facet_wrap(facets = ~ population) +
   ylim(-0.1,0.1)
 
-# What distribution to use in modeling number of stems? It appears to be a highly variable trait—variance is much larger than the mean, nearly across the board. Overdispersed poisson could work, though normal may still suffice.
+#' What distribution to use in modeling number of stems? It appears to be a highly variable trait—variance is much larger than the mean, nearly across the board. Overdispersed poisson could work, though normal may still suffice.\n
 
-
-#' EDA for estimated yield.
+#' EDA for estimated yield
 yield_summ <- yield_df %>%
   group_by(source,population) %>%
   na.omit() %>%
   summarise(mean=mean(EST_YIELD), se=sd(EST_YIELD)/sqrt(n()), n=n())
+yield_summ
 
 yield_df %>%
   ggplot() +
@@ -300,7 +299,7 @@ ggplot(data=yield_df, aes(x=reorder(population, EST_YIELD), y=EST_YIELD)) +
 
 ggplot(data=yield_df, aes(x=reorder(block, EST_YIELD), y=EST_YIELD)) +
   geom_violin(alpha=0.5) + 
-  theme(axis.text.x = element_text(angle=45, size=6)) #does not appear to be any block effect. good. 
+  theme(axis.text.x = element_text(angle=45, size=6)) #does not appear to be any block effect. 
 
 yield_df %>% 
   na.omit() %>%
@@ -316,7 +315,7 @@ yield_df %>% na.omit() %>%
   arrange(-sample_size) %>%
   print(n=Inf)
 
-# check fit of different distros: normal, log-normal, gamma
+#' Check fit of different distros: normal, log-normal, gamma
 set.seed(39)
 yield_df <- mutate(yield_df, log_EST_YIELD=log(ifelse(EST_YIELD==0,0.1,EST_YIELD)))
 # randomly select 5 pops (ended up changing to 25 pops though)
@@ -328,7 +327,7 @@ yield5pops <- yield_df %>%
   sample_n(25)
 yield5pops
 
-# normal fitted for the random pops
+#' Normal fitted for the random pops
 norm_df <- NULL
 for ( i in 1:25 ) {
   x <- seq(yield5pops$min[i],yield5pops$max[i],length.out = 100)
@@ -338,7 +337,7 @@ for ( i in 1:25 ) {
 rm(x,y) #clean up
 head(norm_df)
 
-#' gamma fitted for the random pops
+#' Gamma fitted for the random pops
 gamma_df <- NULL
 for ( i in 1:25 ) {
   x <- seq(yield5pops$min[i],yield5pops$max[i],length.out = 100)
@@ -348,7 +347,7 @@ for ( i in 1:25 ) {
 rm(x,y) #clean up
 head(gamma_df)
 
-# lognormal fitted. this distro appears to fit best.
+#' Lognormal fitted. This distro appears to fit best.
 lognorm_df <- NULL
 for ( i in 1:25 ) {
   x <- seq(yield5pops$logmin[i],yield5pops$logmax[i],length.out = 100)
@@ -368,7 +367,7 @@ yield_df %>%
   geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
-# Plot fitted log-normal distro
+#' Plot fitted log-normal distro
 yield_df %>%
   group_by(population) %>%
   filter(population%in%yield5pops$population) %>%
@@ -378,7 +377,7 @@ yield_df %>%
   geom_line(data=lognorm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
-#' PLot fitted gamma distro
+#' Plot fitted gamma distro
 yield_df %>%
   group_by(population) %>%
   filter(population%in%yield5pops$population) %>%
@@ -388,30 +387,8 @@ yield_df %>%
   geom_line(data=gamma_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
-#' Lognormal looks best
-
 #' EDA miscellaneous scraps
-# Histograms
-stem_data %>%
-  select(fruits,bds_flow,forks,diam_caps,diam_stem, num_of_stems) %>%
-  gather(key="trait", value="trait_value") %>%
-  ggplot() +
-  geom_histogram(mapping=aes(x=trait_value,y=stat(density)), bins=75) +
-  facet_wrap(facets = ~ trait, scales="free")
-
-sd_wt_data %>%
-  ggplot() +
-  geom_histogram(mapping=aes(x=sd_wt_50_ct,y=stat(density)),bins=30)
-
-quartz()
-ff_data %>%
-  select(good_sds,bad_sds,tot_sds,good_fill,tot_fill) %>%
-  gather(key="trait", value="trait_value") %>%
-  ggplot() +
-  geom_histogram(mapping=aes(x=trait_value,y=stat(density)), bins=30) +
-  facet_wrap(facets = ~ trait, scales="free")
-
-# data summaries
+# Data summaries
 sw_summ <-
   sd_wt_data %>% 
   dplyr::select(population,block,sd_wt_50_ct) %>%
@@ -424,14 +401,13 @@ sn_summ <- stem_data %>%
   unique() %>%
   na.omit() %>%
   group_by(population, source) %>%
-  summarise(mean=mean(num_of_stems),se=sd(num_of_stems)/sqrt(n()), cv=100*(sd(num_of_stems)/mean(num_of_stems)), n=n()) #variance is much larger than the mean, so its overdispersed. poisson might not be appropriate. negative binomial instead?
-View(sn_summ)
+  summarise(mean=mean(num_of_stems),se=sd(num_of_stems)/sqrt(n()), cv=100*(sd(num_of_stems)/mean(num_of_stems)), n=n()) #Variance is much larger than the mean, so its overdispersed. poisson might not be appropriate. negative binomial instead?
 
 fruit_summ <- stem_data %>%
-  select(population,block,row,plant,stem_no,fruits) %>%
+  dplyr::select(population,block,row,plant,stem_no,fruits) %>%
   na.omit() %>%
   group_by(population) %>%
-  summarise(mean=mean(fruits), sd=sd(fruits), var=sd(fruits)^2, n=n()) #also overdispersed. poisson might not be appropriate. negative binomial instead?
+  summarise(mean=mean(fruits), sd=sd(fruits), var=sd(fruits)^2, n=n()) #Also overdispersed. poisson might not be appropriate. negative binomial instead?
 
 # compare 'trt A (non-study)' with 'trt B (study)'
 ff_data %>%
@@ -440,24 +416,23 @@ ff_data %>%
 #ggplot(aes(x=trt, y=good_fill)) +
 #geom_violin()
 
-
 forks_summ <- stem_data %>%
-  select(population,block,row,plant,stem_no,forks) %>%
+  dplyr::select(population,block,row,plant,stem_no,forks) %>%
   na.omit() %>%
   group_by(population) %>%
-  summarise(mean=mean(forks), sd=sd(forks), var=sd(forks)^2, n=n()) #mostly underdispersed, but some overdispersion (at population level). Also, not all pops have fork numbers from full 160 stems (8 blocks x 1 plant x 20 stems)
+  summarise(mean=mean(forks), sd=sd(forks), var=sd(forks)^2, n=n()) #Mostly underdispersed, but some overdispersion (at population level). Also, not all pops have fork numbers from full 160 stems (8 blocks x 1 plant x 20 stems)
 
-# check for block effect in forks data
+# Check for block effect in forks data
 stem_data %>%
   group_by(block) %>%
   ggplot(aes(x=block, y=forks)) +
   geom_violin()
 
 ff_summ <- ff_data %>%
-  select(population,block,good_fill) %>%
+  dplyr::select(population,block,good_fill) %>%
   na.omit() %>%
   group_by(population) %>%
-  summarise(mean=mean(good_fill), sd=sd(good_fill), var=sd(good_fill)^2, n=n()) #fruit fill is underdispersed—variance is less than the mean.
+  summarise(mean=mean(good_fill), sd=sd(good_fill), var=sd(good_fill)^2, n=n()) #Fruit fill is underdispersed—variance is less than the mean.
 
 #### Box plots of all the traits
 # estimated yield
@@ -470,7 +445,7 @@ ggplot(data=sd_wt_data, aes(x=population, y=sd_wt_50_ct)) +
   theme(axis.text.x = element_text(angle=45, size=6))
 
 # fruit fill
-ggplot(data=filter(ff_data, trt=="B"), aes(x=population, y=good.fill)) +
+ggplot(data=filter(ff_data, trt=="B"), aes(x=population, y=good_fill)) +
   geom_boxplot(alpha=0.5) + 
   theme(axis.text.x = element_text(angle=45, size=6))
 
@@ -490,12 +465,12 @@ ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=forks)) +
   theme(axis.text.x = element_text(angle=45, size=6)) 
 
 # stem diameter
-ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=diam.stem)) + # big outlier in source 6. 8mm stem diameter?? 
+ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=diam_stem)) + # big outlier in source 6. 8mm stem diameter?? 
   geom_boxplot(alpha=0.5) + 
   theme(axis.text.x = element_text(angle=45, size=6)) 
 
 # capsule diameter
-ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=diam.caps)) +
+ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=diam_caps)) +
   geom_boxplot(alpha=0.5) + 
   theme(axis.text.x = element_text(angle=45, size=6))
 

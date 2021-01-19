@@ -44,7 +44,7 @@ ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T
 ff_data <- ff_data %>% 
   filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources 
   
-# stem and fruit data
+#' Read-in stem data
 stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T) %>%
   mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>%
@@ -389,14 +389,7 @@ mg_contrasts <- post_hoc_MG$contrasts %<>%
 #### Trait correlations. Brent wants me to calculate correlations based on the population means (right now they are calculated at the individual plant (ish) level. Good to aggregate into means, or no?
 install.packages("ggcorrplot")
 
-trait_means_df <- inner_join(ns_means, fruit_means) %>%
-  inner_join(ff_means) %>%
-  inner_join(sd_wt_means) %>%
-  inner_join(stem_diam_means) %>%
-  inner_join(caps_diam_means) %>%
-  inner_join(bf_means) %>%
-  inner_join(fruit_means) %>%
-  inner_join(fork_means) %>%
+trait_corr_df <- pop_trait_means %>%
   inner_join(yield_means) %>% 
   mutate(ratio_bf_to_fruit=buds_and_flowers_per_stem/fruits_per_stem) %>%
   inner_join(select(env_data, population, Lat, Long, Elev_m)) 
