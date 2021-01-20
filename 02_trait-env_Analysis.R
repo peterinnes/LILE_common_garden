@@ -7,10 +7,10 @@
 #' 10.5.20 / last updated 1.15.21
 
 #+ results=FALSE, message=FALSE, warning=FALSE
-devtools::install_github("jimhester/archive")
-devtools::install_github("mirzacengic/climatedata")
-install.packages("rgdal")
-install.packages("AICcmodavg")
+#devtools::install_github("jimhester/archive")
+#devtools::install_github("mirzacengic/climatedata")
+#install.packages("rgdal")
+#install.packages("AICcmodavg")
 library(dplyr)
 library(ggplot2)
 library(interactions)
