@@ -24,14 +24,15 @@ ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T
   filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
   left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
-Appar <- ff_data %>% #list of individual Appar plants to exclude. 6 plants from source 22 are listed as Appar. Brent says go ahead and exclude this entire source.
+Appar <- ff_data %>% #list of individual Appar plants to exclude. 6 plants from source 22 are listed as Appar, so we will exclude this entire source in analyses. 1 plant from source 14 is also in this list. 
   filter(notes==c("Appar")) %>%
   filter(trt=="B") %>%
   dplyr::select(source,trt,block,row,plot,plant)
 Appar
 
 ff_data <- ff_data %>% 
-  filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources
+  filter(!source %in% c(2,5,22,32,38)) %>%
+  anti_join(Appar) #exclude individual Appar plant not captured in the 5 excluded sources
 
 #' Read-in seed weight data
 sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header = T) %>%
@@ -49,7 +50,8 @@ mutate(source=as.factor(source), block=as.factor(block)) %>%
   left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
 
 stem_data <- stem_data %>% 
-  filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar sources
+  filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources
+  anti_join(Appar)
 
 #' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is that in quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
 a <- stem_data %>%
@@ -128,7 +130,7 @@ sd_wt_data %>%
   ggplot() +
   geom_histogram(mapping=aes(x=sd_wt_50_ct,y=stat(density)),bins=30)
 
-#' Now we'll go through each trait, starting with seed weight.
+#' 1. Seed weight EDA.
 # Violin plots of seed weight by population, and by block, separately
 ggplot(data=sd_wt_data, aes(x=reorder(population, sd_wt_50_ct), y=sd_wt_50_ct)) +
   geom_violin(alpha=0.5) + 
@@ -212,7 +214,7 @@ sd_wt_data %>%
   geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ block)
 
-#' EDA of fruit fill. Same steps as above
+#' 2. Fruit Fill. Same steps as above
 #+ results=FALSE, message=FALSE, warning=FALSE
 set.seed(7)
 ff5pops <- ff_data %>% 
@@ -242,7 +244,7 @@ ff_data %>% group_by(population) %>%
   geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
-#' EDA of number of stems per plant
+#' 3. Number of stems per plant EDA
 stems <- stem_data %>% dplyr::select(population,block,row,plot,plant,num_of_stems) %>%
   unique() #unique values only because original spreadsheet had both plant-level and stem-level data. We just want number of stems per plant, which is plant-level.
 
@@ -282,7 +284,7 @@ stems %>%
 
 #' What distribution to use in modeling number of stems? It appears to be a highly variable trait—variance is much larger than the mean, nearly across the board. Overdispersed poisson could work, though normal may still suffice.\n
 
-#' EDA for estimated yield
+#' 9. Estimated yield EDA
 yield_summ <- yield_df %>%
   group_by(source,population) %>%
   na.omit() %>%

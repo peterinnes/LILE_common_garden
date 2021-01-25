@@ -169,38 +169,6 @@ install.packages("vegan")
 devtools::install_github("gavinsimpson/ggvegan")
 library(vegan)
 library(ggvegan)
-pop_trait_means <- read.csv("data/pop_trait_means.csv", header = T)
-temp <- pop_trait_means[,-1]
-rownames(temp) <- pop_trait_means[,1]
-pop_trait_means <- temp
-
-my_trait_rda <- rda(pop_trait_means, scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
-summary(my_trait_rda)
-# Base R biplot with labels
-biplot(my_trait_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
-ordilabel(my_trait_rda, dis="sites", cex=0.5)
-
-
-# ggvegan version
-autoplot(my_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic version
-
-# extract df of PC scores to manually build a plot
-pops_rda <- fortify(my_trait_rda, display='sites')
-traits_rda <- fortify(my_trait_rda, display='species')
-
-ggplot() +
-  geom_point(data=pops_rda, aes(x = PC1, y = PC2)) +
-  geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
-  geom_segment(data=traits_rda, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", arrow=arrow(length=unit(0.01,"npc"))) +
-  geom_text(data=traits_rda, 
-            aes(x=PC1,y=PC2,label=Label,
-                hjust=0.5*(1-sign(PC1)),vjust=0.5*(1-sign(PC2))), 
-            color="red", size=4)
 
 my_clim_rda <- rda(clim_df[4:22], scale = T)
 biplot(my_clim_rda,
