@@ -22,7 +22,7 @@ env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>%
 ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T) %>%
   mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
-  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
+  left_join(dplyr::select(env_data,source,population)) 
 
 Appar <- ff_data %>% #list of individual Appar plants to exclude. 6 plants from source 22 are listed as Appar, so we will exclude this entire source in analyses. 1 plant from source 14 is also in this list. 
   filter(notes==c("Appar")) %>%
@@ -33,25 +33,30 @@ Appar
 ff_data <- ff_data %>% 
   filter(!source %in% c(2,5,22,32,38)) %>%
   anti_join(Appar) #exclude individual Appar plant not captured in the 5 excluded sources
+write.csv(ff_data, file = "data/ff_data.csv", row.names = FALSE)
 
 #' Read-in seed weight data
 sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header = T) %>%
   filter(is.na(notes)) %>% #filter out rows with fewer than 50 seeds (described in notes column in spreadsheet, obs with standard 50 seeds have 'NA' in notes column)
   mutate(source=as.factor(source), block=as.factor(block)) %>%
-  left_join(dplyr::select(env_data, source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
+  left_join(dplyr::select(env_data, source, population))
+
 sd_wt_data <- sd_wt_data %>% 
-  dplyr::select(!notes) %>% #don't need this column anymore
-  filter(!source %in% c(2,5,22,32,38)) # exclude mistaken Appar sources
+  dplyr::select(!c('num_seeds','notes')) %>%
+  filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
+
+write.csv(sd_wt_data, file = "data/sd_wt_data.csv", row.names = FALSE)
 
 #' Read-in stem data
 stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T) %>%
 mutate(source=as.factor(source), block=as.factor(block)) %>%
   filter(trt=="B") %>%
-  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
+  left_join(dplyr::select(env_data,source,population)) 
 
 stem_data <- stem_data %>% 
   filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources
   anti_join(Appar)
+write.csv(stem_data, file = "data/stem_data.csv", row.names = FALSE)
 
 #' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is that in quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
 a <- stem_data %>%
@@ -101,7 +106,7 @@ yield_df <- yield_df %>%
          * (sd_wt_50_ct/50)) %>%
   group_by(population,block) %>%
   arrange(as.character(population))
-write.csv(yield_df,file="data/yield_data.csv", row.names = FALSE)
+write.csv(yield_df,file="data/yield_df.csv", row.names = FALSE)
 
 
 #' #### EXPLORATORY DATA ANALYSIS
@@ -283,6 +288,79 @@ stems %>%
   ylim(-0.1,0.1)
 
 #' What distribution to use in modeling number of stems? It appears to be a highly variable trait—variance is much larger than the mean, nearly across the board. Overdispersed poisson could work, though normal may still suffice.\n
+
+#' 4. Fruit per stem
+fruit_summary <- stem_data %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(mean=mean(fruits),sd=sd(fruits),var=sd(fruits)^2,n=n()) 
+ 
+set.seed(31)
+fruit5pops <- stem_data %>% 
+  dplyr::select(population,block,fruits) %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(mean=mean(fruits), sd=sd(fruits), n=n(), min=min(fruits), max=max(fruits)) %>%
+  sample_n(37)
+fruit5pops
+
+# Normal fitted for the 5 pops
+norm_df <- NULL
+for ( i in 1:37 ) {
+  x <- seq(fruit5pops$min[i],fruit5pops$max[i],length.out = 100)
+  y <- dnorm(x, fruit5pops$mean[i], fruit5pops$sd[i])
+  norm_df <- rbind(norm_df,data.frame(x,y,population=fruit5pops$population[i]))
+}
+rm(x,y) #clean up
+head(norm_df)
+
+# Plot observed vs fitted. Normal distro looks good here.
+stem_data %>% group_by(population) %>%
+  filter(population%in%fruit5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=fruits, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=fruits), col="blue") +
+  geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
+#' 5. Buds/Flowers per stem
+bf_summary <- stem_data %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(max=max(bds_flow), min=min(bds_flow), mean=mean(bds_flow),sd=sd(bds_flow),var=sd(bds_flow)^2,n=n()) 
+
+set.seed(7)
+bf5pops <- stem_data %>% 
+  dplyr::select(population,block,bds_flow) %>%
+  na.omit() %>%
+  group_by(population) %>%
+  summarise(mean=mean(bds_flow), sd=sd(bds_flow), n=n(), min=min(bds_flow), max=max(bds_flow)) %>%
+  sample_n(37)
+bf5pops
+
+# Normal fitted for the 5 pops
+norm_df <- NULL
+for ( i in 1:37 ) {
+  x <- seq(bf5pops$min[i],bf5pops$max[i],length.out = 100)
+  y <- dnorm(x, bf5pops$mean[i], bf5pops$sd[i])
+  norm_df <- rbind(norm_df,data.frame(x,y,population=bf5pops$population[i]))
+}
+rm(x,y) #clean up
+head(norm_df)
+
+# Plot observed vs fitted.
+stem_data %>% group_by(population) %>%
+  filter(population%in%bf5pops$population) %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=bds_flow, y=stat(density)), bins=30) +
+  geom_density(mapping=aes(x=bds_flow), col="blue") +
+  geom_line(data=norm_df, mapping=aes(x=x,y=y), col="red") +
+  facet_wrap(facets = ~ population)
+
+#' 6. Forks per stem
+
+#' 7. Stem diam
+#' 8. Caps diam
 
 #' 9. Estimated yield EDA
 yield_summ <- yield_df %>%

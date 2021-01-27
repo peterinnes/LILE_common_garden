@@ -6,14 +6,18 @@
 # LILE study: Trait analyses
 # Peter Innes
 # 9.29.20
+install.packages("glmmTMB", repos="https://glmmTMB.github.io/glmmTMB/repos", type="binary")
 
 #+ results=FALSE, message=FALSE, warning=FALSE
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(ggpubr)
 library(lme4)
 library(lmerTest)
 library(emmeans)
+library(glmmTMB)
+library(DHARMa)
 library(modelsummary)
 library(magrittr)
 library(reshape2)
@@ -26,49 +30,20 @@ env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>%
   mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
 
 #' Seed weight data
-sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header = T) %>%
-  filter(is.na(notes)) %>% #filter out rows with fewer than 50 seeds (described in notes column in spreadsheet, obs with standard 50 seeds have 'NA' in notes column)
-  mutate(source=as.factor(source), block=as.factor(block)) %>%
-  left_join(dplyr::select(env_data, source, population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s))
-
-# alternatively, for rows with fewer than 50 seeds, scale the seed weight measurements up to approx 50-count value
-#for(i in 1:length(sd_wt_data$sd_wt_50_ct)){
-#  if(!is.na(sd_wt_data$num_seeds[i])){
-#    sd_wt_data$sd_wt_50_ct[i] <- 1/sd_wt_data$num_seeds[i]*50*sd_wt_data$sd_wt_50_ct[i]
-#  }
-#}
-
-sd_wt_data <- sd_wt_data %>% 
-  dplyr::select(!c('num_seeds','notes')) %>%
-  filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
+sd_wt_data <- read.csv("data/sd_wt_data.csv", header = TRUE) %>%
+  mutate(source=as.factor(source), block=as.factor(block))
 
 #' Fruit fill data
-ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T) %>%
-  mutate(source=as.factor(source), block=as.factor(block)) %>%
-  filter(trt=="B") %>% #exclude 'trt A' (non-study/non-harvested plants)
-  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
-
-Appar <- ff_data %>% #list of individual Appar plants to exclude. 6 plants from source 22 are listed as Appar, so we will exclude this entire source in analyses. 1 plant from source 14 is also in this list. 
-  filter(notes==c("Appar")) %>%
-  filter(trt=="B") %>%
-  dplyr::select(source,trt,block,row,plot,plant)
-
-ff_data <- ff_data %>% 
-  filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources 
-  anti_join(Appar)
+ff_data <- read.csv("data/ff_data.csv", header = TRUE) %>%
+  mutate(source=as.factor(source), block=as.factor(block))
 
 #' Stem data
-stem_data <- read.csv("data/cleaned_LILE_yield_data_2013_stem_and_fruit.csv", header=T) %>%
-  mutate(source=as.factor(source), block=as.factor(block)) %>%
-  filter(trt=="B") %>%
-  left_join(dplyr::select(env_data,source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s)) 
-
-stem_data <- stem_data %>% 
-  filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources
-  anti_join(Appar)
+stem_data <- read.csv("data/stem_data.csv", header = T) %>%
+  mutate(source=as.factor(source), block=as.factor(block))
 
 #' Read-in yield data (composite of all the other traits, data frame was created in 01_traits_EDA.R script)
-yield_df <- read.csv("data/yield_data.csv", header=T)
+yield_df <- read.csv("data/yield_df.csv", header=T) %>%
+  mutate(source=as.factor(source), block=as.factor(block))
 
 #' #### FITTING LINEAR MODELS
 
@@ -93,7 +68,7 @@ sw_mod_comps <- cbind(fixef(fit_sd_wt), coef(fit_sd_wt2)$population) %>%
   tibble::rownames_to_column("population")
 sw_mod_comps$population <- gsub("population", "", sw_mod_comps$population)
 
-#' 2. Fruit fill. Normal distro could suffice here.  Or possion? Might need bayesian to get it to fit
+#' 2. Fruit fill mod. Normal distro could suffice here.  Or possion? Might need bayesian to get it to fit
 fit_ff <- lmer(good_fill ~ -1 + population + (1|block) + (1|population:block), data = ff_data)
 ff_fit_summary <- summary(fit_ff)
 
@@ -101,42 +76,39 @@ ff_data$obsv <- 1:nrow(ff_data)
 fit_ff2 <- glmer(good_sds ~ -1 + population + (1|block) + (1|population:block) + (1|obsv), family="poisson", data = ff_data) #singular fit. use Bayesian instead?
 ff_ff2_summary <- summary(fit_ff2)
 
-#' 3. Number of stems per plant. Again normal distro probably will suffice
+#' 3. Number of stems per plant mod. Normal distro
 stems <- stem_data %>% dplyr::select(population,trt,block,row,plot,plant,num_of_stems, Lat_s) %>% unique()
 fit_num_stems <- lmer(num_of_stems ~ -1 + population + (1|block) + (1|population:block), data=stems)
 ns_fit_summary <- summary(fit_num_stems)
 
-# fit with glmer.
-stems$plant <- 1:nrow(stems) #hack that Brent showed us to deal with overdispersion in glmer
-fit_num_stems2 <- glmer(num_of_stems ~ (1|population) + (1|block) + (1|population:block) + (1|plant), family = poisson(link="log"), data=stems) #doesn't converge. try Bayesian?
-plot(fit_num_stems2) #reverse megaphone-ish. this actually looks worse than with normal distro
-summary(fit_num_stems2) 
-
-#' 4. Fruit per stem. 
-fit_fruit <- lmer(fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #nested structure to account for multiple measurements taken from same plant, and in come cases, sub-sampling of populations in blocks.
+#' 4. Fruit per stem mod. For this trait and subsequent per-stem traits, we need an additional mofel term to account for multiple measurements taken from same plant
+fit_fruit <- lmer(fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) 
 summary(fit_fruit)
 
-#stem_data$obsv <- 1:nrow(stem_data)
-fit_fruit2 <- glmer(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), family=poisson(link="log"), data=stem_data) #try poisson instead...singular fit.
+fit_fruit_nb <- glmmTMB(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") #try negative binomial instead
 
-#' 5. Buds/flowers per stem
+#' 5. Buds/flowers per stem mod
 fit_bf <- lmer(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
 summary(fit_bf)
 
-#' 6. Forks per stem
-fit_forks <- lmer(forks ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
-fit_forks2 <- lmer(forks ~ Lat_s + (1|population) + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
-fit_forks3 <- lmer(forks ~ (1|population) + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
+fit_bf_nb <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2")
 
-#' 7. Stem diameter
+fit_bf_p <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "poisson")
+  
+#' 6. Forks per stem mod
+fit_forks <- lmer(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
+
+fit_forks_g <- glmmTMB(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "gaussian")
+
+#' 7. Stem diameter mod
 fit_stem_diam <- lmer(log(diam_stem) ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
 summary(fit_stem_diam)
 
-#' 8. Capsule diameter
+#' 8. Capsule diameter mod
 fit_caps_diam <- lmer(diam_caps ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
 summary(fit_caps_diam)
 
-#' 9. Estimated yield. (see 01_traits_EDA.R for how we calculate yeild, plus exploratory analysis and fit assessments)
+#' 9. Estimated yield mod. (see 01_traits_EDA.R for how we calculate yeild, plus exploratory analysis and fit assessments)
 fit_log_yield <- lmer(log(EST_YIELD) ~ -1 + population + (1|block) + (1|population:block), data=yield_df) 
 ly_fit_summary <- summary(fit_log_yield)
 
@@ -158,7 +130,8 @@ summary(fit_yield_glmer)
 
 #' 1. Seed weight diagnostics
 plot(fit_sd_wt) #looks okay except for a couple outliers in the mid-range.
-qqnorm(residuals(fit_sd_wt)) #doesn't look perfect...but pretty good? 
+qqnorm(resid(fit_sd_wt), main="Seed weight")
+title(main="seed_weight") #looks okay, just a couple outliers 
 
 # Histogram of residuals
 sw_fit_summary <- summary(fit_sd_wt)
@@ -176,7 +149,7 @@ which(sw_resid>=.005 | sw_resid<=-.005)
 
 #' 2. Fruit fill diagnostics
 plot(fit_ff) #doesn't look terrible...residuals tend to be larger at lower fruit fill values
-qqnorm(resid(fit_ff)) #fine?
+qqnorm(resid(fit_ff), main = "Fruit fill") #fine?
 ff_resid <- data.frame(resid=resid(fit_ff))
 ggplot(data=ff_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #looks normal-ish. slightly left skewed.
@@ -196,7 +169,7 @@ ggplot(data=ns_resid, aes(x=resid, y=stat(density))) +
 
 #' 4. Fruit per stem diagnostics
 plot(fit_fruit)
-qqnorm(resid(fit_fruit)) # a bit curvy
+qqnorm(resid(fit_fruit)) # a bit curvy. might be okay. 
 plot(fit_fruit2) #doesn't really change.
 qqnorm(resid(fit_fruit2))
 
@@ -207,9 +180,13 @@ frt_resid <- data.frame(resid=resid(fit_fruit))
 ggplot(data=frt_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #looks good? a few outliers?
 
+fruit_nb_simres <- simulateResiduals(fit_fruit_nb)
+plot(fruit_nb_simres)
+plotQQunif(fruit_nb_simres)
+
 #' 5. Buds/flowers per stem diagnostics
-plot(fit_bf) #normal probably be best fit
-qplot(fitted(fit_bf), resid(fit_bf)) # ggplot alternative to plot()
+plot(fit_bf) #normal probably not best fit
+qplot(fitted(fit_bf), resid(fit_bf)) #ggplot alternative to plot()
 
 qqnorm(resid(fit_bf)) #curvy
 # qqplot using broom.mixed and ggplot2
@@ -218,11 +195,23 @@ ggplot(broom.mixed::augment(fit_bf), aes(sample=.resid/sd(.resid))) + #scale to 
   stat_qq() +
   labs(title="buds and flowers per stem")
 
+# histogram of residuals
 bf_resid <- data.frame(resid=resid(fit_bf))
 ggplot(data=bf_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) 
 
-#' 6. Forks per stem diagnostics
+# diagnostics for nbinom and poisson fits
+summary(fit_bf_nb)
+bf_nb_simres <- simulateResiduals(fit_bf_nb)
+plot(bf_nb_simres) #not sure how to interpret the DHARMa diagnostics
+plotQQunif(bf_nb_simres)
+plotResiduals(bf_nb_simres)
+
+bf_pois_simres <- simulateResiduals(fit_bf_p)
+plot(bf_pois_simres)
+
+
+#' 6. Forks per stem diagnostics.
 summary(fit_forks)
 plot(fit_forks)
 qqnorm(resid(fit_forks)) #not bad. normal might be okay.
@@ -230,9 +219,14 @@ forks_resid <- data.frame(resid=resid(fit_forks))
 ggplot(data=forks_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #looks good. a few outliers?
 
-#' 7. Stem diam diagnostics
-plot(fit_stem_diam) #looks okay, a few right outliers.
-qqnorm(resid(fit_stem_diam))
+forks_simres <- simulateResiduals(fit_forks_g)
+plot(forks_simres)
+plotResiduals(forks_simres)
+plotQQunif(forks_simres)
+
+#' 7. Stem diam diagnostics. Stem diam was log-transformed. Looks okay, a few right outliers.
+plot(fit_stem_diam) 
+qqnorm(resid(fit_stem_diam)) 
 stem_diam_resid <- data.frame(resid=resid(fit_stem_diam))
 ggplot(data=stem_diam_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50)
@@ -256,13 +250,14 @@ colnames(yield_mod_comps) <- c("fy","fy2", "fly", "fly2","flg")
 yield_mod_comps
 
 # diagnostics
+plot(fit_log_yield)
 plot(fit_yield) #megaphone effect
-plot(fit_log_yield) #log transform looks better
+ #log transform looks better
 plot(fit_log_yield2) 
 plot(fit_yield_glmer) #gamma distro also looks okay
 
-qqnorm(resid(fit_yield)) #actually looks fine
 qqnorm(resid(fit_log_yield)) #bout the same as untransformed
+qqnorm(resid(fit_yield)) #actually looks fine
 qqnorm(resid(fit_yield_glmer)) #not as good
 
 yield_resid <- data.frame(resid=resid(fit_yield))
@@ -273,6 +268,20 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
+#' #### gather and summarise model diagnostics
+quartz()
+par(mfrow=c(3,3))
+qqnorm(resid(fit_ff), main = "Fruit fill")
+qqnorm(resid(fit_sd_wt), main="Seed weight")
+qqnorm(resid(fit_num_stems), main = "Number of stems")
+qqnorm(resid(fit_fruit), main = "Fruit per stem")
+qqnorm(resid(fit_bf), main = "Buds and flowers per stem") #curvy
+qqnorm(resid(fit_forks), main = "Forks per stem")
+qqnorm(resid(fit_stem_diam), main = "log Stem diameter") 
+qqnorm(resid(fit_caps_diam), main = "Capsule diameter") 
+qqnorm(resid(fit_log_yield), main = "log Yield")
+
+
 #' #### Gather ls-means of all traits together
 # 1. Seed weight
 sw_means <- as.data.frame(fixef(fit_sd_wt)) %>%
@@ -281,7 +290,7 @@ sw_means <- as.data.frame(fixef(fit_sd_wt)) %>%
 sw_means$population <- gsub("population", "",sw_means$population)
 
 # sw confidence intervals
-confint.merMod(fit_sd_wt)
+confint(fit_sd_wt)
 sd_wt_CI <- as.data.frame(confint(fit_sd_wt)) %>%
   tibble::rownames_to_column(c("population")) %>%
   rename("lwr"="2.5 %", "upr"="97.5 %")

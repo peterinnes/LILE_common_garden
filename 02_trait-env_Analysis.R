@@ -49,6 +49,8 @@ values <- raster::extract(chelsa,points) #previously raster::extract(r,points)
 
 clim_df <- cbind.data.frame(coordinates(points),values) %>%
   tibble::rownames_to_column("population")
+colnames(clim_df)[4:22] <- lapply(colnames(clim_df)[4:22], gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
+
 geo_clim_df <- inner_join(geo_data, clim_df) 
 
 # define a boxplot panel function, then plot pairwise correlations to check for collinearity: https://www.flutterbys.com.au/stats/tut/tut7.3a.html
@@ -61,71 +63,101 @@ panel.bxp <- function(x, ...) {
 #pairs(~mean_sd_wt_50_ct + , data = geo_clim_df, lower.panel = panel.smooth,
       #diag.panel = panel.bxp, upper.panel = NULL, gap = 0)
 
-#### model selection with geographic predictors. 
-# 3-way factor models
-  fit_LaxLoxE <- lmer(sd_wt_50_ct ~ Lat_s*Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-  
-  fit_LaLoE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-  
-fit_LaLoE_LaxLo_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + 
-                               Lat_s:Long + Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+#' #### Hypothesis testing for latitudinal clines
+# sw vs Lat 
+sw_Lat_pred_df <- data.frame(coef(fit_Lat)$population,
+                         se.ranef(fit_Lat)$population[,1])
+names(sw_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
+sw_Lat_pred_df <- sw_Lat_pred_df %>%
+  tibble::rownames_to_column("population") %>%
+  inner_join(dplyr::select(env_data, population, Lat_s))
 
-fit_LaLoE_LaxLo_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                             Lat_s:Long_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Calculate means (intercepts?) for each population 
+sw_Lat_pred_df$pop_b0 <- sw_Lat_pred_df$pop_b0 + sw_Lat_pred_df$b1*sw_Lat_pred_df$Lat_s
 
-fit_LaLoE_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                            Lat_s:Elev_m_s + Long:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Plot pop-level means vs Lat
+plot_sw_Lat <- ggplot(data=sw_Lat_pred_df) +
+  geom_abline(intercept=fixef(fit_Lat)[1], slope=fixef(fit_Lat)[2], col="blue", lty=2) +
+  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
+  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
+  labs(x="Latitude (scaled)", y="Mean 50-count seed weight (g)")
 
-fit_LaLoE_LaxLo_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                                  Lat_s:Long_s + Lat_s:Elev_m_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Number of stems vs Lat
+fit_ns_Lat <- lmer(num_of_stems ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=stems)
+ns_Lat_pred_df <- data.frame(coef(fit_ns_Lat)$population,
+                             se.ranef(fit_ns_Lat)$population[,1])
+names(ns_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
+ns_Lat_pred_df <- ns_Lat_pred_df %>%
+  tibble::rownames_to_column("population") %>%
+  inner_join(dplyr::select(env_data, population, Lat_s))
 
-fit_LaLoE_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                        Lat_s:Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLoE_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                       Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLoE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                       Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Calculate means (intercepts?) for each population 
+ns_Lat_pred_df$pop_b0 <- ns_Lat_pred_df$pop_b0 + ns_Lat_pred_df$b1*ns_Lat_pred_df$Lat_s
 
-# two factor models
-fit_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaxE <- lmer(sd_wt_50_ct ~ Lat_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LoxE <-lmer(sd_wt_50_ct ~ Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaE <-lmer(sd_wt_50_ct ~ Lat_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LoE <- lmer(sd_wt_50_ct ~ Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Plot pop-level means vs Lat
+plot_ns_Lat <- ggplot(data=ns_Lat_pred_df) +
+  geom_abline(intercept=fixef(fit_ns_Lat)[1], slope=fixef(fit_ns_Lat)[2], col="blue", lty=2) +
+  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
+  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
+  labs(x="Latitude (scaled)", y="Mean number of stems")
 
-# single factor models
-fit_Lat <- lmer(sd_wt_50_ct ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_Long <- lmer(sd_wt_50_ct ~ Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_Elev <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+# Forks vs Lat
+fit_forks_Lat <- lmer(forks ~ Lat_s + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
 
-models <- list(fit_LaxLoxE, fit_LaLoE, fit_LaLoE_LaxLo_LaxE, fit_LaLoE_LaxLo_LoxE, fit_LaLoE_LaxE_LoxE, fit_LaLoE_LaxLo_LaxE_LoxE, fit_LaLoE_LaxLo, fit_LaLoE_LaxE, fit_LaLoE_LoxE, fit_LaxLo, fit_LaxE, fit_LoxE, fit_LaLo, fit_LaE, fit_LoE, fit_Lat, fit_Long, fit_Elev)
+forks_Lat_pred_df <- data.frame(coef(fit_forks_Lat)$population,
+                             se.ranef(fit_forks_Lat)$population[,1])
+names(forks_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
+forks_Lat_pred_df <- forks_Lat_pred_df %>%
+  tibble::rownames_to_column("population") %>%
+  inner_join(dplyr::select(env_data, population, Lat_s))
 
-model_names <- c('LaxLoxE', 'LaLoE', 'LaLoE_LaxLo_LaxE', 'LaLoE_LaxLo_LoxE', 'LaLoE_LaxE_LoxE', 'LaLoE_LaxLo_LaxE_LoxE', 'LaLoE_LaxLo', 'LaLoE_LaxE', 'LaLoE_LoxE', 'LaxLo', 'LaxE', 'LoxE', 'LaLo', 'LaE', 'LoE', 'Lat', 'Long', 'Elev')
+# Calculate means (intercepts?) for each population 
+forks_Lat_pred_df$pop_b0 <- forks_Lat_pred_df$pop_b0 + forks_Lat_pred_df$b1*forks_Lat_pred_df$Lat_s
 
-# LMM model comparison results: fit_LaxLo is best
+# Plot pop-level means vs Lat
+plot_forks_Lat <- ggplot(data=forks_Lat_pred_df) +
+  geom_abline(intercept=fixef(fit_forks_Lat)[1], slope=fixef(fit_forks_Lat)[2], col="blue", lty=2) +
+  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
+  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
+  labs(x="Latitude (scaled)", y="Mean number of forks per stem")
+
+#' #### Model selection of traits vs climate predictors. bio1, bio12, bio10, bio18, bio3, bio15, bio4
+# Merge trait and climate data
+sw_clim_data <- inner_join(sd_wt_data, clim_df)
+sw_clim_data[,10:28] <- scale(sw_clim_data[,10:28]) #scale predictors
+
+fit_swc1 <- lmer(sd_wt_50_ct ~ bio01*bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc2 <- lmer(sd_wt_50_ct ~ bio01+bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc3 <- lmer(sd_wt_50_ct ~ bio01+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc4 <- lmer(sd_wt_50_ct ~ bio01+bio12 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc5 <- lmer(sd_wt_50_ct ~ bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc6 <- lmer(sd_wt_50_ct ~ bio01 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc7 <- lmer(sd_wt_50_ct ~ bio12 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc8 <- lmer(sd_wt_50_ct ~ bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+
+fit_swc9 <- lmer(sd_wt_50_ct ~ bio10*bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc10 <- lmer(sd_wt_50_ct ~ bio10+bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc11 <- lmer(sd_wt_50_ct ~ bio10+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc12 <- lmer(sd_wt_50_ct ~ bio10+bio18 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc13 <- lmer(sd_wt_50_ct ~ bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc14 <- lmer(sd_wt_50_ct ~ bio10 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_swc15 <- lmer(sd_wt_50_ct ~ bio18 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+
+models <- list(fit_swc1, fit_swc2, fit_swc3, fit_swc4, fit_swc5, fit_swc6, fit_swc7, fit_swc8, fit_swc9, fit_swc10, fit_swc11, fit_swc12, fit_swc13, fit_swc14, fit_swc15)
+model_names <- c("fit_swc1", "fit_swc2", "fit_swc3", "fit_swc4", "fit_swc5", "fit_swc6", "fit_swc7", "fit_swc8", "fit_swc9","fit_swc10", "fit_swc11", "fit_swc12", "fit_swc13", "fit_swc14", "fit_swc15")
 aictab(cand.set = models, modnames = model_names)
 
-# hypothesis testing for seed weight vs temp and precip 
-sw_clim_data <- sd_wt_data %>% left_join(dplyr::select(clim_df, population, CHELSA_bio10_01,CHELSA_bio10_09, CHELSA_bio10_12, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
-  rename("MAT"="CHELSA_bio10_01", "AP"="CHELSA_bio10_12", "TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
-  mutate(MAT_s=scale(MAT), AP_s=scale(AP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
-
-fit_sw_clim <- lmer(sd_wt_50_ct ~ MAT_s*AP_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #only MAT is significant
-fit_sw_clim2 <- lmer(sd_wt_50_ct ~ TDQ_s*PDQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TDQ and interaction are significant.
-fit_sw_clim3 <- lmer(sd_wt_50_ct ~ TWQ_s*PWQ_s + (1|population) + (1|block) + (1|population:block), data = sw_clim_data) #TWQ and interaction are significant
-summary(fit_sw_clim) 
-
-# forks per stem vs climate
-forks_clim_data <- stem_data %>% left_join(dplyr::select(clim_df, population, CHELSA_bio10_01,CHELSA_bio10_09, CHELSA_bio10_12, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18 )) %>%
-  rename("MAT"="CHELSA_bio10_01", "AP"="CHELSA_bio10_12", "TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
-  mutate(MAT_s=scale(MAT), AP_s=scale(AP), TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ))
-
-fit_forks_clim <- lmer(forks ~ TDQ_s*PDQ_s + (1|population) + (1|population:block) + (1|population:block:plant), data = forks_clim_data)
-summary(fit_forks_clim)
 
 
-#### extract population-level means from REML fit using coef()
+# Old code for neg binom fit of forks vs clim
+fit_forks_nb_clim <- glmmTMB(forks ~ TDQ_s*PDQ_s + (1|population) + (1|population:block) + (1|population:block:plant), data=forks_clim_data, family = "nbinom2", control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+coef(fit_forks_nb_clim)
+forks_clim_simres <- simulateResiduals(fit_forks_nb_clim)
+plot(forks_clim_simres)
+
+# Old code for making interaction plot
+# extract population-level means from REML fit using coef()
 # First need a simple data frame of population coordinates to be used later on in model equation.
 clims <- clim_df %>%
   na.omit() %>%
@@ -161,9 +193,7 @@ interact_plot(fit_sw_clim3, pred=TWQ_s, modx=PWQ_s, interval=TRUE)
 sim_slopes(fit_sw_clim3, pred = TWQ_s, modx = PWQ_s, johnson_neyman = FALSE)
 
 # Geo interaction plot
-interact_plot(fit_LaxLo, pred = Lat_s, modx = Long_s, interval=T, int.width = 0.95)
-  
-
+interact_plot(fit_LaxLo, pred = Lat_s, modx = Long_s, interval=T, int.width = 0.95)totally
 #### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
 devtools::install_github("gavinsimpson/ggvegan")
