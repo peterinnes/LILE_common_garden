@@ -98,15 +98,15 @@ fit_bf_p <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|popul
 #' 6. Forks per stem mod
 fit_forks <- lmer(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
 
-fit_forks_g <- glmmTMB(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "gaussian")
+fit_forks_g <- glmmTMB(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom1")
 
 #' 7. Stem diameter mod
-fit_stem_diam <- lmer(log(diam_stem) ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
-summary(fit_stem_diam)
+fit_log_stemd <- lmer(log(diam_stem) ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
+summary(fit_log_stemd)
 
 #' 8. Capsule diameter mod
-fit_caps_diam <- lmer(diam_caps ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
-summary(fit_caps_diam)
+fit_capsd <- lmer(diam_caps ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
+summary(fit_capsd)
 
 #' 9. Estimated yield mod. (see 01_traits_EDA.R for how we calculate yeild, plus exploratory analysis and fit assessments)
 fit_log_yield <- lmer(log(EST_YIELD) ~ -1 + population + (1|block) + (1|population:block), data=yield_df) 
@@ -225,16 +225,16 @@ plotResiduals(forks_simres)
 plotQQunif(forks_simres)
 
 #' 7. Stem diam diagnostics. Stem diam was log-transformed. Looks okay, a few right outliers.
-plot(fit_stem_diam) 
-qqnorm(resid(fit_stem_diam)) 
-stem_diam_resid <- data.frame(resid=resid(fit_stem_diam))
+plot(fit_log_stemd) 
+qqnorm(resid(fit_log_stemd)) 
+stem_diam_resid <- data.frame(resid=resid(fit_log_stemd))
 ggplot(data=stem_diam_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50)
 
 #' 8. Caps diam show a left skew
-plot(fit_caps_diam)
-qqnorm(resid(fit_caps_diam)) 
-caps_resid <- data.frame(resid=resid(fit_caps_diam))
+plot(fit_capsd)
+qqnorm(resid(fit_capsd)) 
+caps_resid <- data.frame(resid=resid(fit_capsd))
 ggplot(data=caps_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) 
 which(caps_resid<=-1) #is it reasonable to exclude these outliers? 
@@ -268,7 +268,7 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
-#' #### gather and summarise model diagnostics
+#' #### Gather and summarize model diagnostics
 quartz()
 par(mfrow=c(3,3))
 qqnorm(resid(fit_ff), main = "Fruit fill")
@@ -277,26 +277,40 @@ qqnorm(resid(fit_num_stems), main = "Number of stems")
 qqnorm(resid(fit_fruit), main = "Fruit per stem")
 qqnorm(resid(fit_bf), main = "Buds and flowers per stem") #curvy
 qqnorm(resid(fit_forks), main = "Forks per stem")
-qqnorm(resid(fit_stem_diam), main = "log Stem diameter") 
-qqnorm(resid(fit_caps_diam), main = "Capsule diameter") 
+qqnorm(resid(fit_log_stemd), main = "log Stem diameter") 
+qqnorm(resid(fit_capsd), main = "Capsule diameter") 
 qqnorm(resid(fit_log_yield), main = "log Yield")
 
 
 #' #### Gather ls-means of all traits together
-# 1. Seed weight
-sw_means <- as.data.frame(fixef(fit_sd_wt)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("seed_weight"="fixef(fit_sd_wt)") 
-sw_means$population <- gsub("population", "",sw_means$population)
+fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_fruit, fit_bf, fit_forks, fit_log_stemd, fit_capsd, fit_log_yield)
+trait_list <- c("Seed_weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield")
+results <- list()
+for (i in 1:length(fit_list) ){
+  fit <- fit_list[[i]]
+  
+  means <- as.data.frame(fixef(fit)) %>%
+    tibble::rownames_to_column(c("population"))
+  names(means)[2] <- trait_list[[i]]
+  
+  ci <- as.data.frame(confint(fit)) %>%
+    tibble::rownames_to_column(c("population"))
+    names(ci)[2:3] <- c("lwr", "upr")
 
-# sw confidence intervals
-confint(fit_sd_wt)
-sd_wt_CI <- as.data.frame(confint(fit_sd_wt)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("lwr"="2.5 %", "upr"="97.5 %")
-sd_wt_CI$population <- gsub("population", "",sd_wt_CI$population)
+  means_ci <- inner_join(means, ci)
+  means_ci$population <- gsub("population", "", means_ci$population)
+  results[[i]] <- means_ci
+}
 
-# sw effect size plot
+pop_trait_means <- data.frame(population=results[[1]]$population)
+for ( i in 1:length(results) ){
+  pop_trait_means <- cbind(pop_trait_means, results[[i]][2]) #add trait means to growing df
+}
+write.csv(pop_trait_means, file="data/pop_trait_means.csv", row.names = FALSE)
+
+
+# next create effect size plots with loop
+# seffect size plot
 sw_results <- inner_join(sw_means, sd_wt_CI)
 ggplot(data=sw_results, aes(x=seed_weight, y=reorder(population, seed_weight), xmin=lwr,xmax=upr)) +
   geom_point() +
@@ -304,74 +318,12 @@ ggplot(data=sw_results, aes(x=seed_weight, y=reorder(population, seed_weight), x
   ylab("Population") +
   xlab("Mean 50-count seed weight ± 95%CI")
 
-# 2. Fruit fill
-ff_means <- as.data.frame(fixef(fit_ff)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("fruit_fill"="fixef(fit_ff)") 
-ff_means$population <- gsub("population", "", ff_means$population)
-
-# 3. Number of stems
-ns_means <- as.data.frame(fixef(fit_num_stems)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("number_of_stems"="fixef(fit_num_stems)")
-ns_means$population <- gsub("population", "",ns_means$population)
-
-# 4. Fruits per stem
-fruit_means <- as.data.frame(fixef(fit_fruit)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("fruits_per_stem"="fixef(fit_fruit)")
-fruit_means$population <- gsub("population", "",fruit_means$population)
-
-# 5. Buds/flowers per stem
-bf_means <- as.data.frame(fixef(fit_bf)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("buds_and_flowers_per_stem"="fixef(fit_bf)")
-bf_means$population <- gsub("population", "",bf_means$population)
-
-# 6. Forks per stem
-fork_means <- as.data.frame(fixef(fit_forks)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("forks_per_stem"="fixef(fit_forks)")
-fork_means$population <- gsub("population", "",fork_means$population)
-
-# 7. Stem diameter
-stem_diam_means <- as.data.frame(fixef(fit_stem_diam)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("stem_diameter"="fixef(fit_stem_diam)")
-stem_diam_means$population <- gsub("population", "", stem_diam_means$population)
-
-# 8. Capsule diameter
-caps_diam_means <- as.data.frame(fixef(fit_caps_diam)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("capsule_diameter"="fixef(fit_caps_diam)")
-caps_diam_means$population <- gsub("population", "",caps_diam_means$population)
-
-# 9. Yield
-yield_means <- as.data.frame(fixef(fit_log_yield)) %>%
-  tibble::rownames_to_column(c("population")) %>%
-  rename("log_est_yield"="fixef(fit_log_yield)")
-yield_means$population <- gsub("population", "", yield_means$population)
-yield_CI <- as.data.frame(confint(fit_log_yield)) %>% #confidence intervals
-  tibble::rownames_to_column(c("population"))
-yield_CI$population <- gsub("population", "", yield_CI$population) #need to get rid of 'source' in front of all the source numbers
-yield_results <- inner_join(yield_means, yield_CI) %>% 
-  `colnames<-`(c("population","log_EST_YIELD","lwr","upr")) #%>% 
-#mutate(exp_yield=exp(EST_YIELD), exp_lwr=exp(lwr), exp_upr=exp(upr))
 ggplot(data=yield_results, aes(x=log_EST_YIELD, y=reorder(population, log_EST_YIELD), xmin=lwr,xmax=upr)) +
   geom_point() +
   geom_errorbar() +
   ylab("Population") +
   xlab("Mean log Estimated Yield (g seed/plant) ± 95%CI")
 
-pop_trait_means <- full_join(sw_means, ff_means)
-pop_trait_means <- full_join(pop_trait_means, ns_means)
-pop_trait_means <- full_join(pop_trait_means, fruit_means)
-pop_trait_means <- full_join(pop_trait_means, fork_means)
-pop_trait_means <- full_join(pop_trait_means, bf_means)
-pop_trait_means <- full_join(pop_trait_means, stem_diam_means)
-pop_trait_means <- full_join(pop_trait_means, caps_diam_means)
-pop_trait_means <- full_join(pop_trait_means, yield_means)
-write.csv(pop_trait_means, file="data/pop_trait_means.csv", row.names = FALSE)
 
 
 #' #### POST-HOC comparisons

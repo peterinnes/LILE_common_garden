@@ -80,44 +80,61 @@ make_pred_df <- function(fit){
   return(pred_df)
 }
 
-# Fit models for each trait. Would prefer to do this with a for() loop but different models come frome different data frames, or have slightly different parameterizations due to singularity issues
+# Function for making predictions from LMMs, to obtain confidence intervals subsequently with bootMer() and confint()
+predict_fun <- function(fit) {
+  predict(fit, newd, re.form=NA)   # This is predict.merMod 
+}
 
+# Fit models for each trait vs Latitude. Would prefer to do this with a for() loop but different models come from different data frames, or have slightly different parameterizations due to singularity issues
 sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat)) 
 fit_sw_Lat <- lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|block) + (1|population:block),
                    data=sd_wt_data)
+
+ff_data <- ff_data %>% inner_join(dplyr::select(env_data,source,population, Lat))
+fit_ff_Lat <- lmer(good_fill ~ Lat + (1|population) + (1|block) + (1|population:block), data = ff_data)
 
 stems <- stems %>% inner_join(dplyr::select(env_data, population, Lat))
 fit_ns_Lat <- lmer(num_of_stems ~ Lat + (1|population) + (1|block) + (1|population:block), data=stems)
 
 stem_data <- stem_data %>% inner_join(dplyr::select(env_data, population, Lat))
-fit_forks_Lat <- lmer(forks ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
-
-fit_bf_Lat <- lmer(bds_flow ~ Lat + (1|population) + (1|population:block:plant), data=stem_data) #leave out (1|population:block), (1|block), variance is essentially zero for these effects
-
 fit_fruits_Lat <- lmer(fruits ~ Lat + (1|population) + (1|population:block:plant), data=stem_data)
+fit_bf_Lat <- lmer(bds_flow ~ Lat + (1|population) + (1|population:block:plant), data=stem_data) #leave out (1|population:block), (1|block), variance is essentially zero for these effects
+fit_forks_Lat <- lmer(forks ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
+fit_stemd_Lat <- fit_stem_diam <- lmer(log(diam_stem) ~ Lat + (1|population) + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
+fit_capsd_Lat <- lmer(diam_caps ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
 
-# Yield vs lat
 yield_df <- yield_df %>% inner_join(dplyr::select(env_data, population, source, Lat))
-fit_yield_Lat <- lmer(EST_YIELD ~ Lat + (1|population) + (1|block) + (1|population:block), data = yield_df)
+fit_yield_Lat <- lmer(log(EST_YIELD) ~ Lat + (1|population) + (1|block) + (1|population:block), data = yield_df)
 
-fit_list <- c(fit_sw_Lat, fit_ns_Lat, fit_forks_Lat, fit_bf_Lat, fit_fruits_Lat, fit_yield_Lat)
-trait_list <- c("Seed weight", "Number of stems", "Forks per stem", "Buds/flowers per stem", "Fruits per stem", "Estimated yield")
+# Make lists and storage for the for() loop
+fit_list <- c(fit_sw_Lat, fit_ff_Lat, fit_ns_Lat, fit_fruits_Lat, fit_bf_Lat, fit_forks_Lat, fit_stemd_Lat, fit_capsd_Lat, fit_yield_Lat)
+trait_list <- c("Seed weight", "Fruit fill", "Stems", "Fruits", "Buds/flowers", "Forks", "log Stem dia", "Capsule dia", "log Est. yield")
 plot_list = list()
+# Loop through each model, calculating population means and confidence intervals of regression lines
 for (i in 1:length(fit_list)) {
   fit <- fit_list[[i]]
-  pred_df <- make_pred_df(fit)
+  pred_df <- make_pred_df(fit) #get population means
+  
+  # Obtain confidence interval for regression line
+  newd <- data.frame(Lat = seq(min(geo_data$Lat, na.rm=T), max(geo_data$Lat, na.rm=T), length.out=100))
+  lmm_boots <- bootMer(fit, predict_fun, nsim = 100)
+  pred_ci <- cbind(newd, confint(lmm_boots))
+  
   plot <- ggplot(data=pred_df) +
-    geom_abline(intercept=fixef(fit)[1], slope=fixef(fit)[2], col="blue", lty=2) +
-    geom_point(mapping=aes(x=Lat, y=pop_b0)) +
-    geom_linerange(mapping=aes(x=Lat, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
-    labs(x="", y=paste(trait_list[[i]])) +
-    annotate(text, x=, y=)
+    geom_abline(intercept=fixef(fit)[1], slope=fixef(fit)[2], lty=2) +
+    geom_point(mapping=aes(x=Lat, y=pop_b0), color="royalblue2", alpha=0.5) +
+    geom_linerange(mapping=aes(x=Lat, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se), color="royalblue2", alpha=0.5) +
+    geom_ribbon(data=pred_ci, aes(x=Lat, ymin=`2.5 %`, ymax=`97.5 %`), alpha=0.25) +
+    labs(x="Lat", y=paste(trait_list[[i]]))
   
   plot_list[[i]] <- plot
 }
-plot <- cowplot::plot_grid(plotlist = plot_list, ncol = 2)
-ggdraw(add_sub(plot, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.25, vjust=4.5))
-ggdraw(add_sub(plot, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.75, vjust=4.5))
+p <- cowplot::plot_grid(plotlist = plot_list, ncol = 3)
+ggdraw(add_sub(p, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.53, vjust=4.5))
+
+png("traits_vs_Lat.png", width=8, height=7, res=300, units="in")
+p
+dev.off()
 
 
 #' ########
@@ -149,53 +166,6 @@ models <- list(fit_swc1, fit_swc2, fit_swc3, fit_swc4, fit_swc5, fit_swc6, fit_s
 model_names <- c("fit_swc1", "fit_swc2", "fit_swc3", "fit_swc4", "fit_swc5", "fit_swc6", "fit_swc7", "fit_swc8", "fit_swc9","fit_swc10", "fit_swc11", "fit_swc12", "fit_swc13", "fit_swc14", "fit_swc15")
 aictab(cand.set = models, modnames = model_names)
 
-
-
-# Old code for neg binom fit of forks vs clim
-fit_forks_nb_clim <- glmmTMB(forks ~ TDQ_s*PDQ_s + (1|population) + (1|population:block) + (1|population:block:plant), data=forks_clim_data, family = "nbinom2", control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
-
-coef(fit_forks_nb_clim)
-forks_clim_simres <- simulateResiduals(fit_forks_nb_clim)
-plot(forks_clim_simres)
-
-# Old code for making interaction plot
-# extract population-level means from REML fit using coef()
-# First need a simple data frame of population coordinates to be used later on in model equation.
-clims <- clim_df %>%
-  na.omit() %>%
-  dplyr::select(population, CHELSA_bio10_09, CHELSA_bio10_17, CHELSA_bio10_10, CHELSA_bio10_18) %>%
-  rename("TDQ"="CHELSA_bio10_09", "PDQ"="CHELSA_bio10_17", "TWQ"="CHELSA_bio10_10", "PWQ"="CHELSA_bio10_18") %>%
-  mutate(TDQ_s=scale(TDQ), PDQ_s=scale(PDQ), TWQ_s=scale(TWQ), PWQ_s=scale(PWQ)) %>%
-  arrange(population)
-
-ml_pred_df <- data.frame(coef(fit_sw_clim3)$population,
-                         se.ranef(fit_sw_clim3)$population[,1])
-names(ml_pred_df) <- c("pop_b0", "b1", "b2", "b3", "pop_b0_se")
-ml_pred_df <- ml_pred_df %>%
-  tibble::rownames_to_column("population") %>%
-  inner_join(clims)
-
-# Calculate intercepts for each population 
-ml_pred_df$pop_b0 <- ml_pred_df$pop_b0 + ml_pred_df$b1*ml_pred_df$TWQ_s + ml_pred_df$b2*ml_pred_df$PWQ_s + ml_pred_df$b3*ml_pred_df$TWQ_s*ml_pred_df$PWQ_s
-
-# Plot pop-level means vs temp
-plot_sw_clim3 <- ggplot(data=ml_pred_df) +
-  geom_abline(intercept=fixef(fit_sw_clim3)[1], slope=fixef(fit_sw_clim3)[3], col="blue", lty=2) +
-  geom_point(mapping=aes(x=TWQ_s, y=pop_b0)) +
-  geom_linerange(mapping=aes(x=TWQ_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
-  labs(x="Mean Temp Warmest Quarter (scaled)", y="Estimated intercept in population l")
-
-# Visualize the interaction effect by turning precip into categorical variable (split into 3 groups)
-ml_pred_df$cat_PWQ_s <- as.factor(as.numeric(cut_number(ml_pred_df$PWQ_s, 3)))
-plot_sw_clim3x <- ggplot(data=ml_pred_df) + 
-  geom_point(mapping=aes(x=TWQ_s, y=pop_b0, color=cat_PWQ_s)) +
-  geom_linerange(mapping=aes(x=TWQ_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se))
-
-interact_plot(fit_sw_clim3, pred=TWQ_s, modx=PWQ_s, interval=TRUE)
-sim_slopes(fit_sw_clim3, pred = TWQ_s, modx = PWQ_s, johnson_neyman = FALSE)
-
-# Geo interaction plot
-interact_plot(fit_LaxLo, pred = Lat_s, modx = Long_s, interval=T, int.width = 0.95)totally
 #### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
 devtools::install_github("gavinsimpson/ggvegan")
