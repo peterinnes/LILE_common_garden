@@ -77,7 +77,7 @@ fit_ff2 <- glmer(good_sds ~ -1 + population + (1|block) + (1|population:block) +
 ff_ff2_summary <- summary(fit_ff2)
 
 #' 3. Number of stems per plant mod. Normal distro
-stems <- stem_data %>% dplyr::select(population,trt,block,row,plot,plant,num_of_stems, Lat_s) %>% unique()
+stems <- stem_data %>% dplyr::select(population,trt,block,row,plot,plant,num_of_stems) %>% unique()
 fit_num_stems <- lmer(num_of_stems ~ -1 + population + (1|block) + (1|population:block), data=stems)
 ns_fit_summary <- summary(fit_num_stems)
 

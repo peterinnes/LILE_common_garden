@@ -63,65 +63,67 @@ panel.bxp <- function(x, ...) {
 #pairs(~mean_sd_wt_50_ct + , data = geo_clim_df, lower.panel = panel.smooth,
       #diag.panel = panel.bxp, upper.panel = NULL, gap = 0)
 
+#' ########
 #' #### Hypothesis testing for latitudinal clines
-# sw vs Lat 
-sw_Lat_pred_df <- data.frame(coef(fit_Lat)$population,
-                         se.ranef(fit_Lat)$population[,1])
-names(sw_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
-sw_Lat_pred_df <- sw_Lat_pred_df %>%
-  tibble::rownames_to_column("population") %>%
-  inner_join(dplyr::select(env_data, population, Lat_s))
+#' ########
 
-# Calculate means (intercepts?) for each population 
-sw_Lat_pred_df$pop_b0 <- sw_Lat_pred_df$pop_b0 + sw_Lat_pred_df$b1*sw_Lat_pred_df$Lat_s
+# This is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
+make_pred_df <- function(fit){
+  pred_df <- data.frame(coef(fit)$population,
+                               se.ranef(fit)$population[,1])
+  names(pred_df) <- c("pop_b0", "b1", "pop_b0_se")
+  pred_df <- pred_df %>%
+    tibble::rownames_to_column("population") %>%
+    inner_join(dplyr::select(env_data, population, Lat))
+  # Calculate means (intercepts?) for each population 
+  pred_df$pop_b0 <- pred_df$pop_b0 + pred_df$b1*pred_df$Lat
+  return(pred_df)
+}
 
-# Plot pop-level means vs Lat
-plot_sw_Lat <- ggplot(data=sw_Lat_pred_df) +
-  geom_abline(intercept=fixef(fit_Lat)[1], slope=fixef(fit_Lat)[2], col="blue", lty=2) +
-  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
-  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
-  labs(x="Latitude (scaled)", y="Mean 50-count seed weight (g)")
+# Fit models for each trait. Would prefer to do this with a for() loop but different models come frome different data frames, or have slightly different parameterizations due to singularity issues
 
-# Number of stems vs Lat
-fit_ns_Lat <- lmer(num_of_stems ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=stems)
-ns_Lat_pred_df <- data.frame(coef(fit_ns_Lat)$population,
-                             se.ranef(fit_ns_Lat)$population[,1])
-names(ns_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
-ns_Lat_pred_df <- ns_Lat_pred_df %>%
-  tibble::rownames_to_column("population") %>%
-  inner_join(dplyr::select(env_data, population, Lat_s))
+sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat)) 
+fit_sw_Lat <- lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|block) + (1|population:block),
+                   data=sd_wt_data)
 
-# Calculate means (intercepts?) for each population 
-ns_Lat_pred_df$pop_b0 <- ns_Lat_pred_df$pop_b0 + ns_Lat_pred_df$b1*ns_Lat_pred_df$Lat_s
+stems <- stems %>% inner_join(dplyr::select(env_data, population, Lat))
+fit_ns_Lat <- lmer(num_of_stems ~ Lat + (1|population) + (1|block) + (1|population:block), data=stems)
 
-# Plot pop-level means vs Lat
-plot_ns_Lat <- ggplot(data=ns_Lat_pred_df) +
-  geom_abline(intercept=fixef(fit_ns_Lat)[1], slope=fixef(fit_ns_Lat)[2], col="blue", lty=2) +
-  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
-  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
-  labs(x="Latitude (scaled)", y="Mean number of stems")
+stem_data <- stem_data %>% inner_join(dplyr::select(env_data, population, Lat))
+fit_forks_Lat <- lmer(forks ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
 
-# Forks vs Lat
-fit_forks_Lat <- lmer(forks ~ Lat_s + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
+fit_bf_Lat <- lmer(bds_flow ~ Lat + (1|population) + (1|population:block:plant), data=stem_data) #leave out (1|population:block), (1|block), variance is essentially zero for these effects
 
-forks_Lat_pred_df <- data.frame(coef(fit_forks_Lat)$population,
-                             se.ranef(fit_forks_Lat)$population[,1])
-names(forks_Lat_pred_df) <- c("pop_b0", "b1", "pop_b0_se")
-forks_Lat_pred_df <- forks_Lat_pred_df %>%
-  tibble::rownames_to_column("population") %>%
-  inner_join(dplyr::select(env_data, population, Lat_s))
+fit_fruits_Lat <- lmer(fruits ~ Lat + (1|population) + (1|population:block:plant), data=stem_data)
 
-# Calculate means (intercepts?) for each population 
-forks_Lat_pred_df$pop_b0 <- forks_Lat_pred_df$pop_b0 + forks_Lat_pred_df$b1*forks_Lat_pred_df$Lat_s
+# Yield vs lat
+yield_df <- yield_df %>% inner_join(dplyr::select(env_data, population, source, Lat))
+fit_yield_Lat <- lmer(EST_YIELD ~ Lat + (1|population) + (1|block) + (1|population:block), data = yield_df)
 
-# Plot pop-level means vs Lat
-plot_forks_Lat <- ggplot(data=forks_Lat_pred_df) +
-  geom_abline(intercept=fixef(fit_forks_Lat)[1], slope=fixef(fit_forks_Lat)[2], col="blue", lty=2) +
-  geom_point(mapping=aes(x=Lat_s, y=pop_b0)) +
-  geom_linerange(mapping=aes(x=Lat_s, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
-  labs(x="Latitude (scaled)", y="Mean number of forks per stem")
+fit_list <- c(fit_sw_Lat, fit_ns_Lat, fit_forks_Lat, fit_bf_Lat, fit_fruits_Lat, fit_yield_Lat)
+trait_list <- c("Seed weight", "Number of stems", "Forks per stem", "Buds/flowers per stem", "Fruits per stem", "Estimated yield")
+plot_list = list()
+for (i in 1:length(fit_list)) {
+  fit <- fit_list[[i]]
+  pred_df <- make_pred_df(fit)
+  plot <- ggplot(data=pred_df) +
+    geom_abline(intercept=fixef(fit)[1], slope=fixef(fit)[2], col="blue", lty=2) +
+    geom_point(mapping=aes(x=Lat, y=pop_b0)) +
+    geom_linerange(mapping=aes(x=Lat, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se)) +
+    labs(x="", y=paste(trait_list[[i]])) +
+    annotate(text, x=, y=)
+  
+  plot_list[[i]] <- plot
+}
+plot <- cowplot::plot_grid(plotlist = plot_list, ncol = 2)
+ggdraw(add_sub(plot, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.25, vjust=4.5))
+ggdraw(add_sub(plot, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.75, vjust=4.5))
 
+
+#' ########
 #' #### Model selection of traits vs climate predictors. bio1, bio12, bio10, bio18, bio3, bio15, bio4
+#' ########
+
 # Merge trait and climate data
 sw_clim_data <- inner_join(sd_wt_data, clim_df)
 sw_clim_data[,10:28] <- scale(sw_clim_data[,10:28]) #scale predictors
