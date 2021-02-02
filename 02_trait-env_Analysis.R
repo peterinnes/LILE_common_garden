@@ -168,7 +168,7 @@ models <- list(fit_swc1, fit_swc2, fit_swc3, fit_swc4, fit_swc5, fit_swc6, fit_s
 model_names <- c("fit_swc1", "fit_swc2", "fit_swc3", "fit_swc4", "fit_swc5", "fit_swc6", "fit_swc7", "fit_swc8", "fit_swc9","fit_swc10", "fit_swc11", "fit_swc12", "fit_swc13", "fit_swc14", "fit_swc15")
 aictab(cand.set = models, modnames = model_names)
 
-#### PCA/RDA as a multivariate approach. helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
+#### PCA/RDA for a multivariate approach? helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
 devtools::install_github("gavinsimpson/ggvegan")
 library(vegan)
