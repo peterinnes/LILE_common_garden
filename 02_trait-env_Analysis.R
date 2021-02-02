@@ -108,7 +108,7 @@ fit_yield_Lat <- lmer(log(EST_YIELD) ~ Lat + (1|population) + (1|block) + (1|pop
 
 # Make lists and storage for the for() loop
 fit_list <- c(fit_sw_Lat, fit_ff_Lat, fit_ns_Lat, fit_fruits_Lat, fit_bf_Lat, fit_forks_Lat, fit_stemd_Lat, fit_capsd_Lat, fit_yield_Lat)
-trait_list <- c("Seed weight", "Fruit fill", "Stems", "Fruits", "Buds/flowers", "Forks", "log Stem dia", "Capsule dia", "log Est. yield")
+trait_list <- c("Seed weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield")
 plot_list = list()
 # Loop through each model, calculating population means and confidence intervals of regression lines
 for (i in 1:length(fit_list)) {
@@ -120,19 +120,21 @@ for (i in 1:length(fit_list)) {
   lmm_boots <- bootMer(fit, predict_fun, nsim = 100)
   pred_ci <- cbind(newd, confint(lmm_boots))
   
+  # Plot population means vs latitude
   plot <- ggplot(data=pred_df) +
     geom_abline(intercept=fixef(fit)[1], slope=fixef(fit)[2], lty=2) +
     geom_point(mapping=aes(x=Lat, y=pop_b0), color="royalblue2", alpha=0.5) +
     geom_linerange(mapping=aes(x=Lat, ymin=pop_b0-pop_b0_se,ymax=pop_b0+pop_b0_se), color="royalblue2", alpha=0.5) +
     geom_ribbon(data=pred_ci, aes(x=Lat, ymin=`2.5 %`, ymax=`97.5 %`), alpha=0.25) +
-    labs(x="Lat", y=paste(trait_list[[i]]))
+    labs(x="Lat", y=paste(trait_list[[i]])) +
+    theme_minimal()
   
   plot_list[[i]] <- plot
 }
 p <- cowplot::plot_grid(plotlist = plot_list, ncol = 3)
 ggdraw(add_sub(p, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.53, vjust=4.5))
 
-png("traits_vs_Lat.png", width=8, height=7, res=300, units="in")
+png("plots/traits_vs_Lat.png", width=11, height=9, res=300, units="in")
 p
 dev.off()
 
