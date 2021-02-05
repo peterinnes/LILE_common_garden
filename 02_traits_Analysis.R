@@ -6,7 +6,6 @@
 # LILE study: Trait analyses
 # Peter Innes
 # 9.29.20
-install.packages("glmmTMB", repos="https://glmmTMB.github.io/glmmTMB/repos", type="binary")
 
 #+ results=FALSE, message=FALSE, warning=FALSE
 library(dplyr)
@@ -28,7 +27,7 @@ library(arm) #for se.ranef()
 #' Collection/environmental data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
   mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
-site_info
+
 
 #' Seed weight data
 sd_wt_data <- read.csv("data/sd_wt_data.csv", header = TRUE) %>%
@@ -117,6 +116,12 @@ summary(fit_yield2)
 fit_yield_glmer <- glmer(EST_YIELD ~ (1|population) + (1|block) + (1|population:block), family=Gamma(link="log"), data=yield_df) #fails to converge when population is a fixed effect.
 
 summary(fit_yield_glmer)
+
+
+#' 10. Estimated fecundity — Fruit fill x (Fruits per stem + Buds_flowers per stem) x Stems per plant
+yield_df$EST_seeds_per_plant <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
+fit_num_seeds <- lmer(EST_seeds_per_plant ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
+summary(fit_num_seeds) #a lot of variation, mostly at the individual plant level (residual)
 
 
 #' #### Model DIAGNOSTICS

@@ -103,12 +103,17 @@ fit_forks_Lat <- lmer(forks ~ Lat + (1|population) + (1|population:block) + (1|p
 fit_stemd_Lat <- fit_stem_diam <- lmer(log(diam_stem) ~ Lat + (1|population) + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
 fit_capsd_Lat <- lmer(diam_caps ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
 
-yield_df <- yield_df %>% inner_join(dplyr::select(env_data, population, source, Lat))
+yield_df <- dplyr::select(env_data, population, site, source, Lat) %>% inner_join(yield_df)
 fit_yield_Lat <- lmer(log(EST_YIELD) ~ Lat + (1|population) + (1|block) + (1|population:block), data = yield_df)
 
+fit_num_seeds_Lat <- lmer(EST_seeds_per_plant ~ Lat + (1|population) + (1|block) + (1|population:block), data=yield_df)
+
+fit_hf_Lat <- lmer(HYP_fecundity ~ Lat + (1|population) + (1|block), data=yield_df)
+summary(fit_hf_Lat)
+
 # Make lists and storage for the for() loop
-fit_list <- c(fit_sw_Lat, fit_ff_Lat, fit_ns_Lat, fit_fruits_Lat, fit_bf_Lat, fit_forks_Lat, fit_stemd_Lat, fit_capsd_Lat, fit_yield_Lat)
-trait_list <- c("Seed weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield")
+fit_list <- c(fit_sw_Lat, fit_ff_Lat, fit_ns_Lat, fit_fruits_Lat, fit_bf_Lat, fit_forks_Lat, fit_stemd_Lat, fit_capsd_Lat, fit_yield_Lat, fit_num_seeds_Lat)
+trait_list <- c("Seed weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "Est_num_seeds")
 plot_list = list()
 # Loop through each model, calculating population means and confidence intervals of regression lines
 for (i in 1:length(fit_list)) {

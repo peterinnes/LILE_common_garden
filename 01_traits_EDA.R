@@ -467,6 +467,11 @@ yield_df %>%
   geom_line(data=gamma_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
+#' 10. Estimated seeds per plant — Fruit fill * Fruits per stem * Stems per plant
+yield_df$EST_seeds_per_plant <- 
+
+#' 11. Hypothetical fecundity — Total combined capsules, buds, and flowers
+
 #' EDA miscellaneous scraps
 # Data summaries
 sw_summ <-

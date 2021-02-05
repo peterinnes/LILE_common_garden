@@ -41,3 +41,13 @@ summary(fit_surviv)
 
 fit_surviv_4_27_13 <- lmer(tj_surviv$perc_surviv_4_27_13 ~ -1 + Entry + (1|Rep), data=tj_surviv)
 summary(fit_surviv_4_27_13)
+
+# Height data
+ht_data <- read.csv("data/TomJ_flax_avg_ht_dia_2013_RAW_DATA.csv", header = T, na.strings = '.') %>% mutate(Plot=as.factor(Plot), Rep=as.factor(Rep), Entry=as.factor(Entry))
+ht_data <- ht_data %>% dplyr::select(Plot, Rep, Entry, ht_pl1, ht_pl2, ht_pl3, ht_pl4, ht_pl5)
+ht_data <- gather(ht_data, key = "Plant", value = "height", ht_pl1:ht_pl5)
+
+head(ht_data)
+str(ht_data)
+fit_ht <- lmer(height ~ -1 + Entry + (1|Rep) + (1|Plot), data = ht_data)
+summary(fit_ht)
