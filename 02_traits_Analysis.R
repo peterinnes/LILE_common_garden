@@ -334,6 +334,7 @@ temp <- pop_trait_means[,-1]
 rownames(temp) <- temp[,10]
 temp <- temp[,-10]
 pop_trait_means <- temp
+
 # with population id as rownames/labels
 temp <- pop_trait_means[,-1]
 rownames(temp) <- pop_trait_means[,1]

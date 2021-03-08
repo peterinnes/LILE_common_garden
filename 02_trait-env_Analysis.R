@@ -7,12 +7,12 @@
 #' 10.5.20 / last updated 1.15.21
 
 #+ results=FALSE, message=FALSE, warning=FALSE
-devtools::install_github("jimhester/archive")
-remotes::install_github("MirzaCengic/climatedata")
 
+#devtools::install_github("jimhester/archive") #for CHELSA climate data
+#remotes::install_github("MirzaCengic/climatedata") #for CHELSA climate data
 library(dplyr)
 library(ggplot2)
-#library(interactions)
+#library(interactions) #for interaction plots
 library(rgdal)
 library(raster)
 library(sp)
@@ -23,23 +23,18 @@ library(AICcmodavg)
 library(magrittr)
 library(lme4)
 library(arm) #for se.ranef()
+library(vegan)
+library(ggvegan)
 
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
   mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m))
 
-geo_data <- env_data %>% dplyr::select(source,population,Lat,Lat_s,Long,Long_s,Elev_m,Elev_m_s) %>%
-  filter(!source %in% c(2,5,22,32,38)) %>%
+geo_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
+  filter(!source %in% c(2,5,22,32,38)) %>% #remove mistaken/duplicate Appar
   filter(!is.na(Lat) | !is.na(Long)) #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
 
-# check correlations b/w geographic predictors. No significant correlations, that's good.
-plot(geo_data$Elev_m_s ~ geo_data$Long_s)
-plot(geo_data$Elev_m_s ~ geo_data$Lat_s)
-plot(geo_data$Lat ~ geo_data$Long)
-cor.test(geo_data$Long, geo_data$Elev_m)
-cor.test(geo_data$Lat, geo_data$Elev_m)
-cor.test(geo_data$Long, geo_data$Lat)
-
-#### get climate data from the CHELSA database, which has the bioclim data at high resolution (30 arc sec, ~1km) 
+#### Get climate data from the CHELSA database ####
+# CHELSA has the bioclim data at high resolution (30 arc sec, ~1km()
 chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat,
@@ -54,21 +49,76 @@ colnames(clim_df)[4:22] <- lapply(colnames(clim_df)[4:22], gsub, pattern = "CHEL
 
 geo_clim_df <- inner_join(geo_data, clim_df) 
 
-# define a boxplot panel function, then plot pairwise correlations to check for collinearity: https://www.flutterbys.com.au/stats/tut/tut7.3a.html
-panel.bxp <- function(x, ...) {
-  usr <- par("usr")
-  on.exit(par(usr))
-  par(usr = c(usr[1:2], 0, 2))
-  boxplot(x, add = TRUE, horizontal = T)
-}
-#pairs(~mean_sd_wt_50_ct + , data = geo_clim_df, lower.panel = panel.smooth,
-      #diag.panel = panel.bxp, upper.panel = NULL, gap = 0)
+#' #### Checking for association b/w environmental variables ####
+# Check correlations b/w geographic predictors. No significant correlations, that's good.
+plot(geo_data$Elev_m_s ~ geo_data$Long_s)
+plot(geo_data$Elev_m_s ~ geo_data$Lat_s)
+plot(geo_data$Lat ~ geo_data$Long)
+cor.test(geo_data$Long, geo_data$Elev_m)
+cor.test(geo_data$Lat, geo_data$Elev_m)
+cor.test(geo_data$Long, geo_data$Lat)
 
-#' ########
-#' #### Hypothesis testing for latitudinal clines
-#' ########
+# PCA of environmental variables: which ones are redundant?
+# First plot everything, then we will check for colinearity.
+rownames(geo_clim_df) <- geo_clim_df[,1]
+my_env_rda <- rda(geo_clim_df[3:24], scale = T)
+biplot(my_env_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+ordilabel(my_env_rda, dis="sites", cex=0.5)
+write.csv(summary(eigenvals(my_env_rda)), file = "results_summaries/env_pca_full.eigenvals.csv")
 
-# This is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
+autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none")
+png("plots/env_pca.png", width=9, height=9, res=300, units="in")
+my_env_rda
+dev.off()
+
+# using base R
+my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) #same as vegan RDA above
+summary(my_env_pca)
+
+# pca of just climate vars
+my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
+biplot(my_clim_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+summary(eigenvals(my_clim_rda))
+
+
+# check colinearity of climate and geo predictors. Which predictors should we remove?
+geo_clim_corr <- round(cor(geo_clim_df[,3:24], method=c("pearson"), use = "complete.obs"),4)
+redun_preds <- caret::findCorrelation(geo_clim_corr, names = T)
+
+clim_corr <- round(cor(geo_clim_df[,6:24], method=c("pearson"), use = "complete.obs"),4) #just climate variables, no geo vars
+redun_clim_preds <- caret::findCorrelation(clim_corr, names = T)
+
+geo_clim_df_sub <- dplyr::select(geo_clim_df, -all_of(redun_preds))
+my_env_sub_rda <- rda(geo_clim_df_sub[3:16], scale = T)
+biplot(my_env_sub_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+ordilabel(my_env_sub_rda, dis="sites", cex=0.5)
+summary(my_env_sub_rda)
+summary(eigenvals(my_env_sub_rda))
+
+clim_df_sub <- dplyr::select(geo_clim_df[,6:24], -all_of(redun_clim_preds))
+my_clim_sub_rda <- rda(clim_df_sub, scale = T)
+biplot(my_clim_sub_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+
+summary(eigenvals(my_clim_sub_rda))
+
+#' #### Hypothesis testing for latitudinal clines ####
+# make_pred_df is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
 make_pred_df <- function(fit){
   pred_df <- data.frame(coef(fit)$population,
                                se.ranef(fit)$population[,1])
@@ -87,9 +137,10 @@ predict_fun <- function(fit) {
 }
 
 # Fit models for each trait vs Latitude. Would prefer to do this with a for() loop but different models come from different data frames, or have slightly different parameterizations due to singularity issues
-sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat)) 
-fit_sw_Lat <- lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|block) + (1|population:block),
-                   data=sd_wt_data)
+sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s)) 
+
+fit_sw_Lat <- lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|population:block),
+                   data=sd_wt_data) #leave out (1|block), variance is essentially zero 
 
 ff_data <- ff_data %>% inner_join(dplyr::select(env_data,source,population, Lat))
 fit_ff_Lat <- lmer(good_fill ~ Lat + (1|population) + (1|block) + (1|population:block), data = ff_data)
@@ -145,9 +196,8 @@ p
 dev.off()
 
 
-#' ########
-#' #### Model selection of traits vs climate predictors. bio1, bio12, bio10, bio18, bio3, bio15, bio4
-#' ########
+
+#' #### Model selection of traits vs climate predictors. bio1, bio12, bio10, bio18, bio3, bio15, bio4 ####
 
 # Merge trait and climate data
 sw_clim_data <- inner_join(sd_wt_data, clim_df)
@@ -173,6 +223,51 @@ fit_swc15 <- lmer(sd_wt_50_ct ~ bio18 + (1|population) + (1|block) + (1|populati
 models <- list(fit_swc1, fit_swc2, fit_swc3, fit_swc4, fit_swc5, fit_swc6, fit_swc7, fit_swc8, fit_swc9, fit_swc10, fit_swc11, fit_swc12, fit_swc13, fit_swc14, fit_swc15)
 model_names <- c("fit_swc1", "fit_swc2", "fit_swc3", "fit_swc4", "fit_swc5", "fit_swc6", "fit_swc7", "fit_swc8", "fit_swc9","fit_swc10", "fit_swc11", "fit_swc12", "fit_swc13", "fit_swc14", "fit_swc15")
 aictab(cand.set = models, modnames = model_names)
+
+# mod selection using BIC for geo variables
+fit_LaxLoxE <- lmer(sd_wt_50_ct ~ Lat_s*Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE_LaxLo_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + 
+                               Lat_s:Long + Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE_LaxLo_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                               Lat_s:Long_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                              Lat_s:Elev_m_s + Long:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE_LaxLo_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                                    Lat_s:Long_s + Lat_s:Elev_m_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+fit_LaLoE_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                          Lat_s:Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LaLoE_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                         Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LaLoE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
+                         Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+# two factor models
+fit_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LaxE <- lmer(sd_wt_50_ct ~ Lat_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LoxE <-lmer(sd_wt_50_ct ~ Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LaLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LaE <-lmer(sd_wt_50_ct ~ Lat_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_LoE <- lmer(sd_wt_50_ct ~ Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+# single factor models
+fit_Lat <- lmer(sd_wt_50_ct ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_Long <- lmer(sd_wt_50_ct ~ Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_Elev <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+
+models <- list(fit_LaxLoxE, fit_LaLoE, fit_LaLoE_LaxLo_LaxE, fit_LaLoE_LaxLo_LoxE, fit_LaLoE_LaxE_LoxE, fit_LaLoE_LaxLo_LaxE_LoxE, fit_LaLoE_LaxLo, fit_LaLoE_LaxE, fit_LaLoE_LoxE, fit_LaxLo, fit_LaxE, fit_LoxE, fit_LaLo, fit_LaE, fit_LoE, fit_Lat, fit_Long, fit_Elev)
+
+model_names <- c('LaxLoxE', 'LaLoE', 'LaLoE_LaxLo_LaxE', 'LaLoE_LaxLo_LoxE', 'LaLoE_LaxE_LoxE', 'LaLoE_LaxLo_LaxE_LoxE', 'LaLoE_LaxLo', 'LaLoE_LaxE', 'LaLoE_LoxE', 'LaxLo', 'LaxE', 'LoxE', 'LaLo', 'LaE', 'LoE', 'Lat', 'Long', 'Elev')
+
+bic_sw <- bictab(cand.set = models, modnames = model_names) #Lat is best model
+step(fit_LaxLoxE, k=log(nobs(fit_LaxLoxE)))
+
 
 #### PCA/RDA for a multivariate approach? helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
 install.packages("vegan")
@@ -211,27 +306,3 @@ my_rda
 plot(my_rda, type='n', scaling=1)
 orditorp(my_rda, display='sp', cex=0.5, scaling=1, col='blue')
 text(my_rda, display='cn', col='red')
-
-
-#### k means clustering. not working currently 1.13.21
-library(cluster)
-library(factoextra)
-library(purrr)
-
-df <- pop_trait_means
-# Function to compute total within-cluster sum of square
-wssplot <- function(data, nc=15, seed=1234){
-  wss <- (nrow(data)-1)*sum(apply(data,2,var))
-  for (i in 2:nc){
-    set.seed(seed)
-    wss[i] <- sum(kmeans(data, centers=i)$withinss)}
-  plot(1:nc, wss, type="b", xlab="Number of Clusters",
-       ylab="Within groups sum of squares")
-}
-
-wssplot(pop_trait_means)
-
-# continue with k=4
-clusters <- kmeans(df, 4, nstart = 25)
-print(clusters)
-fviz_cluster(clusters, data = df) # I don't really like this plot
