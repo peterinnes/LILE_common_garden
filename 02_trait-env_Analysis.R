@@ -58,64 +58,95 @@ cor.test(geo_data$Long, geo_data$Elev_m)
 cor.test(geo_data$Lat, geo_data$Elev_m)
 cor.test(geo_data$Long, geo_data$Lat)
 
-# PCA of environmental variables: which ones are redundant?
-# First plot everything, then we will check for colinearity.
+# PCA of environmental variables
 rownames(geo_clim_df) <- geo_clim_df[,1]
-my_env_rda <- rda(geo_clim_df[3:24], scale = T)
+my_env_rda <- rda(geo_clim_df[3:24], scale = T) #geo and clim vars
+summary(my_env_rda)
+my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) #using base R, same as vegan RDA above
+summary(my_env_pca)
+
 biplot(my_env_rda,
        display = c("sites", 
                    "species"),
        type = c("text",
                 "points"))
 ordilabel(my_env_rda, dis="sites", cex=0.5)
-write.csv(summary(eigenvals(my_env_rda)), file = "results_summaries/env_pca_full.eigenvals.csv")
 
-autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none")
 png("plots/env_pca.png", width=9, height=9, res=300, units="in")
 my_env_rda
 dev.off()
 
-# using base R
-my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) #same as vegan RDA above
-summary(my_env_pca)
+autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
-# pca of just climate vars
+# Plot of proportion variance explained
+data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
+  pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
+  mutate(PC=factor(PC, levels = PC)) %>%
+  ggplot(aes(x=PC, y=Proportion_Explained)) +
+    geom_col() +
+    labs(title="PCA of 22 geographic and climate predictors")
+
+# plot the eigenvalues
+screeplot(my_env_rda)
+
+
+# Get loadings of the vars on each PC
+BioClim_codes <- read.csv("BioClim_codes.csv")
+env_PC1_loadings <- data.frame(scores(my_env_rda, choices=1, display = "species", scaling = 0)) %>%
+  tibble::rownames_to_column("var") %>%
+  arrange(desc(abs(PC1))) %>%
+  full_join(dplyr::select(BioClim_codes, var, description)) %>%
+  relocate(description, .after = var)
+write.csv(env_PC1_loadings, file = "results_summaries/env_PC1_loadings.csv")
+
+
+env_PC2_loadings <- data.frame(scores(my_env_rda, choices=2, display = "species", scaling = 0)) %>%
+  tibble::rownames_to_column("var") %>%
+  arrange(desc(abs(PC2))) %>%
+  full_join(dplyr::select(BioClim_codes, var, description)) %>%
+  relocate(description, .after = var)
+write.csv(env_PC2_loadings, file = "results_summaries/env_PC2_loadings.csv")
+
+env_PCA_scores <- data.frame(scores(my_env_rda, choices=1:2, display = "sites", scaling=2)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
+  tibble::rownames_to_column("source")
+
+# PCA of just climate vars
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
+summary(my_clim_rda)
 biplot(my_clim_rda,
        display = c("sites", 
                    "species"),
        type = c("text",
                 "points"))
+ordilabel(my_clim_rda, dis="sites", cex=0.5)
 summary(eigenvals(my_clim_rda))
 
+# Plot proportion explained
+data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
+  pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
+  mutate(PC=factor(PC, levels = PC)) %>%
+  ggplot(aes(x=PC, y=Proportion_Explained)) +
+  geom_col()
 
-# check colinearity of climate and geo predictors. Which predictors should we remove?
-geo_clim_corr <- round(cor(geo_clim_df[,3:24], method=c("pearson"), use = "complete.obs"),4)
-redun_preds <- caret::findCorrelation(geo_clim_corr, names = T)
+summary(my_clim_rda)
 
-clim_corr <- round(cor(geo_clim_df[,6:24], method=c("pearson"), use = "complete.obs"),4) #just climate variables, no geo vars
-redun_clim_preds <- caret::findCorrelation(clim_corr, names = T)
+my_clim_rda$CA$v #loadings of clim vars i.e. 'species'. Why is this different than what's reported in the summary()? it's a difference scaling
+scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)
 
-geo_clim_df_sub <- dplyr::select(geo_clim_df, -all_of(redun_preds))
-my_env_sub_rda <- rda(geo_clim_df_sub[3:16], scale = T)
-biplot(my_env_sub_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
-ordilabel(my_env_sub_rda, dis="sites", cex=0.5)
-summary(my_env_sub_rda)
-summary(eigenvals(my_env_sub_rda))
+my_clim_rda$CA$u[,1:2] #loadings of sources i.e. 'sites'
+clim_PCA_scores <- data.frame(scores(my_clim_rda, choices=1:2, display = "sites", scaling=2)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
+  tibble::rownames_to_column("source")
 
-clim_df_sub <- dplyr::select(geo_clim_df[,6:24], -all_of(redun_clim_preds))
-my_clim_sub_rda <- rda(clim_df_sub, scale = T)
-biplot(my_clim_sub_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
 
-summary(eigenvals(my_clim_sub_rda))
+fit_sw_Clim <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block),
+                   data=sd_wt_data %>% left_join(clim_PCA_scores)) 
+summary(fit_sw_Clim)
+fit_sw_Env <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block),
+                   data=sd_wt_data %>% left_join(env_PCA_scores)) 
+summary(fit_sw_Env)
+
+fit_stems_Clim <- lmer(num_of_stems ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=stems %>% left_join(clim_PCA_scores))
+summary(fit_stems_Clim)
 
 #' #### Hypothesis testing for latitudinal clines ####
 # make_pred_df is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
@@ -265,7 +296,7 @@ models <- list(fit_LaxLoxE, fit_LaLoE, fit_LaLoE_LaxLo_LaxE, fit_LaLoE_LaxLo_Lox
 
 model_names <- c('LaxLoxE', 'LaLoE', 'LaLoE_LaxLo_LaxE', 'LaLoE_LaxLo_LoxE', 'LaLoE_LaxE_LoxE', 'LaLoE_LaxLo_LaxE_LoxE', 'LaLoE_LaxLo', 'LaLoE_LaxE', 'LaLoE_LoxE', 'LaxLo', 'LaxE', 'LoxE', 'LaLo', 'LaE', 'LoE', 'Lat', 'Long', 'Elev')
 
-bic_sw <- bictab(cand.set = models, modnames = model_names) #Lat is best model
+bic_sw <- bictab(cand.set = models, modnames = model_names) #Lat only is best model by BIC 
 step(fit_LaxLoxE, k=log(nobs(fit_LaxLoxE)))
 
 
