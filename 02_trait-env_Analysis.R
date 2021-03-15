@@ -146,11 +146,52 @@ clim_PCA_scores <- data.frame(scores(my_clim_rda, choices=1:2, display = "sites"
   tibble::rownames_to_column("source")
 
 
-#' #### Hypothesis testing for latitudinal clines ####
+
+
+
+#' #### Model selection of traits vs env PCs ####
+
+traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
+
+datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
+
+fixefs <- c('PC1*PC2*PC3', 'PC1 + PC2 + PC3', 'PC1*PC2', 'PC1*PC3', 'PC2*PC3', 'PC1 + PC2', 'PC1 + PC3', 'PC2 + PC3', 'PC1', 'PC2', 'PC3') #List of each predictor combination to include in our model selection
+
+results <- list()
+for ( i in 1:length(traits) ){ #loop through each trait
+  trait <- traits[i]
+  data <- datasets[[i]] %>% inner_join(env_PC_scores)
+  
+  # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
+  if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
+    ranefs <- list('(1|population)', '(1|population:block:plant)') #removed two random effects terms bc of singular fits
+  } else {
+    ranefs <- list('(1|population)', '(1|block)', '(1|population:block)')
+  }
+  randstr <- paste(ranefs, collapse=" + ") #Set up the random effects structure for right side of model
+  
+  fits <- list() #Storage for each model fit of trait i
+  for ( j in 1:length(fixefs) ){ #Loop through the different predictor sets we want to compare
+    form <- reformulate(c(fixefs[j], randstr), response=trait) #Set the model formula
+    print(form)
+    fit <- lmer(form, REML = FALSE, data = data) # Finally, fit the actual model!!
+    
+    fits[[j]] <- fit 
+  }
+  bic <- bictab(cand.set = fits, modnames = fixefs)
+  results[[i]] <- bic
+}
+names(results) <- traits
+results
+
+# Brent suggested including the env PCs (climate + geog) AND the geographic predictors. 
+
+#' #### Exploring latitudinal clines ####
+
 # make_pred_df is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
 make_pred_df <- function(fit){
   pred_df <- data.frame(coef(fit)$population,
-                               se.ranef(fit)$population[,1])
+                        se.ranef(fit)$population[,1])
   names(pred_df) <- c("pop_b0", "b1", "pop_b0_se")
   pred_df <- pred_df %>%
     tibble::rownames_to_column("population") %>%
@@ -190,7 +231,7 @@ fit_yield_Lat <- lmer(log(EST_YIELD) ~ Lat + (1|population) + (1|block) + (1|pop
 
 fit_num_seeds_Lat <- lmer(EST_seeds_per_plant ~ Lat + (1|population) + (1|block) + (1|population:block), data=yield_df)
 
-fit_hf_Lat <- lmer(HYP_fecundity ~ Lat + (1|population) + (1|block), data=yield_df)
+fit_hf_Lat <- lmer(HYP_fecundity ~ Lat + (1|population) + (1|block), data=yield_df) #'hypothetical fecundity' = (num fruits + num buds/flowers) * fruit fill
 summary(fit_hf_Lat)
 
 # Make lists and storage for the for() loop
@@ -224,136 +265,3 @@ ggdraw(add_sub(p, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.53, vjust=
 png("plots/traits_vs_Lat.png", width=11, height=9, res=300, units="in")
 p
 dev.off()
-
-
-#' #### Model selection of traits vs env PCs ####
-
-# Seed weight
-sw_env_data <- left_join(sd_wt_data, env_PC_scores) %>% left_join() #Merge trait and climate data
-
-fit_PC1xPC2xPC3 <- lmer(sd_wt_50_ct ~ PC1*PC2*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-fit_PC1PC2PC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-fit_PC1PC2PC3_PC1xPC2_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 + 
-                               PC1:PC2 + PC1:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-fit_PC1PC2PC3_PC1xPC2_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                               PC1:PC2 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-fit_PC1PC2PC3_PC1xPC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                              PC1:PC3 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-fit_PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                                    PC1:PC2 + PC1:PC3 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE) #not converging
-
-fit_PC1PC2PC3_PC1xPC2 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                          PC1:PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC1PC2PC3_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                         PC1:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC1PC2PC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
-                         PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-# two factor models
-fit_PC1xPC2 <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC2xPC3 <-lmer(sd_wt_50_ct ~ PC2*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC1PC2 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC1PC3 <-lmer(sd_wt_50_ct ~ PC1 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC2PC3 <- lmer(sd_wt_50_ct ~ PC2 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-# single factor models
-fit_PC1 <- lmer(sd_wt_50_ct ~ PC1 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC2 <- lmer(sd_wt_50_ct ~ PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-fit_PC3 <- lmer(sd_wt_50_ct ~ PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
-
-models <- list(fit_PC1xPC2xPC3, fit_PC1PC2PC3, fit_PC1PC2PC3_PC1xPC2_PC1xPC3, fit_PC1PC2PC3_PC1xPC2_PC2xPC3, fit_PC1PC2PC3_PC1xPC3_PC2xPC3, fit_PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3, fit_PC1PC2PC3_PC1xPC2, fit_PC1PC2PC3_PC1xPC3, fit_PC1PC2PC3_PC2xPC3, fit_PC1xPC2, fit_PC1xPC3, fit_PC2xPC3, fit_PC1PC2, fit_PC1PC3, fit_PC2PC3, fit_PC1, fit_PC2, fit_PC3)
-model_names <- c('PC1xPC2xPC3', 'PC1PC2PC3', 'PC1PC2PC3_PC1xPC2_PC1xPC3', 'PC1PC2PC3_PC1xPC2_PC2xPC3', 'PC1PC2PC3_PC1xPC3_PC2xPC3', 'PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3', 'PC1PC2PC3_PC1xPC2', 'PC1PC2PC3_PC1xPC3', 'PC1PC2PC3_PC2xPC3', 'PC1xPC2', 'PC1xPC3', 'PC2xPC3', 'PC1PC2', 'PC1PC3', 'PC2PC3', 'PC1', 'PC2', 'PC3')
-
-# reduced set--more carefully considered, each representing a more clear and interesting hypothesis
-models2 <- list(fit_PC1xPC2xPC3, fit_PC1PC2PC3, fit_PC1xPC2, fit_PC1xPC3, fit_PC2xPC3, fit_PC1PC2, fit_PC1PC3, fit_PC2PC3, fit_PC1, fit_PC2, fit_PC3)
-model_names2 <- c('PC1xPC2xPC3', 'PC1PC2PC3', 'PC1xPC2', 'PC1xPC3', 'PC2xPC3', 'PC1PC2', 'PC1PC3', 'PC2PC3', 'PC1', 'PC2', 'PC3')
-
-bic_sw <- bictab(cand.set = models, modnames = model_names)
-aic_sw <- aictab(cand.set = models, modnames = model_names, second.ord = F)
-
-
-bic_sw2 <- bictab(cand.set = models2, modnames = model_names2)
-aic_sw2 <- aictab(cand.set = models2, modnames = model_names2, second.ord = F)
-
-?step
-
-# Brent suggested including the env PCs (climate + geog) AND the geographic predictors 
-sw_geo_env_data <- sd_wt_data %>% inner_join(dplyr::select(env_data, source, Lat_s, Long_s, Elev_m_s)) %>%
-  inner_join(env_PC_scores)
-
-# full model
-fit_sw1 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-
-# three factor geog model
-fit_sw2 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-
-# two factor models
-fit_sw3 <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw4 <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw5 <- lmer(sd_wt_50_ct ~ Lat_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw6 <- lmer(sd_wt_50_ct ~ Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-
-fit_sw7 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw8 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw9 <- lmer(sd_wt_50_ct ~ Lat_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw10 <- lmer(sd_wt_50_ct ~ Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-
-# Single factor models
-fit_sw11 <- lmer(sd_wt_50_ct ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw12 <- lmer(sd_wt_50_ct ~ Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw13 <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw14 <- lmer(sd_wt_50_ct ~ PC1 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-fit_sw15 <- lmer(sd_wt_50_ct ~ PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
-
-models3 <- list(fit_sw1, fit_sw2, fit_sw3, fit_sw4, fit_sw5, fit_sw6, fit_sw7, fit_sw8, fit_sw9, fit_sw10, fit_sw11, fit_sw12, fit_sw13, fit_sw14, fit_sw15)
-model_names3 <- c('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15' )
-
-bic_sw_mods3 <- bictab(cand.set = models3, modnames = model_names3)
-aic_sw_mods3 <- aictab(cand.set = models3, modnames = model_names3, second.ord = F)
-
-
-#### Mod selection for each trait of interest: seed weight, fruit fill, number of stems per plant, fruit (and flowers?) per stem, forks per stem, caps diam, stem diam. ####
-# need to specify which variables are transformed vs those 
-
-
-traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
-
-datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
-
-fixefs <- c('PC1*PC2*PC3', 'PC1 + PC2 + PC3', 'PC1*PC2', 'PC1*PC3', 'PC2*PC3', 'PC1 + PC2', 'PC1 + PC3', 'PC2 + PC3', 'PC1', 'PC2', 'PC3') #List of each predictor combination to include in our model selection
-
-results <- list()
-for ( i in 1:length(traits) ){ #loop through each trait
-  trait <- traits[i]
-  data <- datasets[[i]] %>% inner_join(env_PC_scores)
-  
-  # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
-  if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
-    ranefs <- list('(1|population)', '(1|population:block:plant)') #removed two random effects terms bc of singular fits
-  } else {
-    ranefs <- list('(1|population)', '(1|block)', '(1|population:block)')
-  }
-  randstr <- paste(ranefs, collapse=" + ") #Set up the random effects structure for right side of model
-  
-  fits <- list() #Storage for each model fit of trait i
-  for ( j in 1:length(fixefs) ){ #Loop through the different predictor sets we want to compare
-    form <- reformulate(c(fixefs[j], randstr), response=trait) #Set the model formula
-    print(form)
-    fit <- lmer(form, REML = FALSE, data = data) # Finally, fit the actual model!!
-    
-    fits[[j]] <- fit 
-  }
-  bic <- bictab(cand.set = fits, modnames = fixefs)
-  results[[i]] <- bic
-}
-names(results) <- traits
-results
-
-
-
