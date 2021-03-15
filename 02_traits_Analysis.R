@@ -75,11 +75,15 @@ fit_num_stems <- lmer(num_of_stems ~ -1 + population + (1|block) + (1|population
 ns_fit_summary <- summary(fit_num_stems)
 
 #' 4. Fruit per stem mod. For this trait and subsequent per-stem traits, we need an additional model term to account for multiple measurements taken from same plant
+stem_data$fruits_tr <- (sqrt(stem_data$fruits) - 1) / .5 #square root transform?
 fit_fruit <- lmer(fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) 
 summary(fit_fruit)
+plot(fit_fruit)
+qqnorm(resid(fit_fruit))
 
-# try negative binomial instead
+# try negative binomial instead?
 fit_fruit_nb <- glmmTMB(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") 
+
 #' 5. Buds/flowers per stem mod
 fit_bf <- lmer(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
 summary(fit_bf)
@@ -94,7 +98,8 @@ fit_forks <- lmer(forks ~ -1 + population + (1|population:block) + (1|population
 fit_forks_nb <- glmmTMB(forks ~ (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") #trying negative binom with glmmTMB. Doesn't seem much better
 
 #' 7. Stem diameter
-fit_log_stemd <- lmer(log(diam_stem) ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
+stem_data$log_diam_stem <- log(stem_data$diam_stem) #log transform
+fit_log_stemd <- lmer(log_diam_stem ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
 summary(fit_log_stemd)
 
 #' 8. Capsule diameter
@@ -102,10 +107,11 @@ fit_capsd <- lmer(diam_caps ~ -1 + population + (1|population:block) + (1|popula
 summary(fit_capsd)
 
 #' 9. Estimated yield. (see 01_traits_EDA.R for how we estimate yield)
-fit_log_yield <- lmer(log(EST_YIELD) ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
+yield_df$log_EST_YIELD <- log(yield_df$EST_YIELD)
+fit_log_yield <- lmer(log_EST_YIELD ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
 ly_fit_summary <- summary(fit_log_yield)
 
-fit_log_yield2 <- lmer(log(EST_YIELD) ~ (1|population) + (1|block) + (1|population:block), data=yield_df) 
+fit_log_yield2 <- lmer(log_EST_YIELD ~ (1|population) + (1|block) + (1|population:block), data=yield_df) 
 fit_yield <- lmer(EST_YIELD ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
 summary(fit_yield)
 yield_fit_summary <- summary(fit_yield)

@@ -22,6 +22,7 @@ library(climatedata)
 library(AICcmodavg)
 library(magrittr)
 library(lme4)
+library(lmerTest)
 library(arm) #for se.ranef()
 library(vegan)
 library(ggvegan)
@@ -89,8 +90,7 @@ data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
 # plot the eigenvalues
 screeplot(my_env_rda)
 
-
-# Get loadings of the vars on each PC
+# Get loadings of the env vars on each PC
 BioClim_codes <- read.csv("BioClim_codes.csv")
 env_PC1_loadings <- data.frame(scores(my_env_rda, choices=1, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
@@ -99,7 +99,6 @@ env_PC1_loadings <- data.frame(scores(my_env_rda, choices=1, display = "species"
   relocate(description, .after = var)
 write.csv(env_PC1_loadings, file = "results_summaries/env_PC1_loadings.csv")
 
-
 env_PC2_loadings <- data.frame(scores(my_env_rda, choices=2, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC2))) %>%
@@ -107,8 +106,17 @@ env_PC2_loadings <- data.frame(scores(my_env_rda, choices=2, display = "species"
   relocate(description, .after = var)
 write.csv(env_PC2_loadings, file = "results_summaries/env_PC2_loadings.csv")
 
-env_PCA_scores <- data.frame(scores(my_env_rda, choices=1:2, display = "sites", scaling=2)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
+env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species", scaling=0)) %>% #default is scaling=2 (scale by species) is what the summary() reports
+  tibble::rownames_to_column("var") %>%
+  arrange(desc(abs(PC3))) %>%
+  full_join(dplyr::select(BioClim_codes, var, description)) %>%
+  relocate(description, .after = var)
+write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
+
+# Get site (source/population) scores to use in trait-env model selection
+env_PC_scores <- data.frame(scores(my_env_rda, choices=1:3, display = "sites", scaling=0)) %>%
   tibble::rownames_to_column("source")
+                              
 
 # PCA of just climate vars
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
@@ -121,32 +129,22 @@ biplot(my_clim_rda,
 ordilabel(my_clim_rda, dis="sites", cex=0.5)
 summary(eigenvals(my_clim_rda))
 
-# Plot proportion explained
-data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
+data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>% 
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
   mutate(PC=factor(PC, levels = PC)) %>%
-  ggplot(aes(x=PC, y=Proportion_Explained)) +
+  # Plot proportion explained
+  ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
 
 summary(my_clim_rda)
 
-my_clim_rda$CA$v #loadings of clim vars i.e. 'species'. Why is this different than what's reported in the summary()? it's a difference scaling
-scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)
+my_clim_rda$CA$v #access PC scores (loadings) 
+scores(my_clim_rda, choices=1:2, display = "species", scaling = 1) #alternate way to access scores
 
 my_clim_rda$CA$u[,1:2] #loadings of sources i.e. 'sites'
 clim_PCA_scores <- data.frame(scores(my_clim_rda, choices=1:2, display = "sites", scaling=2)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
   tibble::rownames_to_column("source")
 
-
-fit_sw_Clim <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block),
-                   data=sd_wt_data %>% left_join(clim_PCA_scores)) 
-summary(fit_sw_Clim)
-fit_sw_Env <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block),
-                   data=sd_wt_data %>% left_join(env_PCA_scores)) 
-summary(fit_sw_Env)
-
-fit_stems_Clim <- lmer(num_of_stems ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=stems %>% left_join(clim_PCA_scores))
-summary(fit_stems_Clim)
 
 #' #### Hypothesis testing for latitudinal clines ####
 # make_pred_df is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
@@ -168,7 +166,8 @@ predict_fun <- function(fit) {
 }
 
 # Fit models for each trait vs Latitude. Would prefer to do this with a for() loop but different models come from different data frames, or have slightly different parameterizations due to singularity issues
-sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s)) 
+sd_wt_data <- sd_wt_data %>% inner_join(dplyr::select(env_data,source,population, Lat, Lat_s, Long, Long_s, Elev_m, Elev_m_s)) %>%
+  inner_join(clim_PCA_scores)
 
 fit_sw_Lat <- lmer(sd_wt_50_ct ~ Lat + (1|population) + (1|population:block),
                    data=sd_wt_data) #leave out (1|block), variance is essentially zero 
@@ -227,113 +226,134 @@ p
 dev.off()
 
 
+#' #### Model selection of traits vs env PCs ####
 
-#' #### Model selection of traits vs climate predictors. bio1, bio12, bio10, bio18, bio3, bio15, bio4 ####
+# Seed weight
+sw_env_data <- left_join(sd_wt_data, env_PC_scores) %>% left_join() #Merge trait and climate data
 
-# Merge trait and climate data
-sw_clim_data <- inner_join(sd_wt_data, clim_df)
-sw_clim_data[,10:28] <- scale(sw_clim_data[,10:28]) #scale predictors
+fit_PC1xPC2xPC3 <- lmer(sd_wt_50_ct ~ PC1*PC2*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-fit_swc1 <- lmer(sd_wt_50_ct ~ bio01*bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc2 <- lmer(sd_wt_50_ct ~ bio01+bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc3 <- lmer(sd_wt_50_ct ~ bio01+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc4 <- lmer(sd_wt_50_ct ~ bio01+bio12 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc5 <- lmer(sd_wt_50_ct ~ bio12+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc6 <- lmer(sd_wt_50_ct ~ bio01 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc7 <- lmer(sd_wt_50_ct ~ bio12 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc8 <- lmer(sd_wt_50_ct ~ bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_PC1PC2PC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-fit_swc9 <- lmer(sd_wt_50_ct ~ bio10*bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc10 <- lmer(sd_wt_50_ct ~ bio10+bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc11 <- lmer(sd_wt_50_ct ~ bio10+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc12 <- lmer(sd_wt_50_ct ~ bio10+bio18 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc13 <- lmer(sd_wt_50_ct ~ bio18+bio03 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc14 <- lmer(sd_wt_50_ct ~ bio10 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
-fit_swc15 <- lmer(sd_wt_50_ct ~ bio18 + (1|population) + (1|block) + (1|population:block), data=sw_clim_data, REML = FALSE)
+fit_PC1PC2PC3_PC1xPC2_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 + 
+                               PC1:PC2 + PC1:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-models <- list(fit_swc1, fit_swc2, fit_swc3, fit_swc4, fit_swc5, fit_swc6, fit_swc7, fit_swc8, fit_swc9, fit_swc10, fit_swc11, fit_swc12, fit_swc13, fit_swc14, fit_swc15)
-model_names <- c("fit_swc1", "fit_swc2", "fit_swc3", "fit_swc4", "fit_swc5", "fit_swc6", "fit_swc7", "fit_swc8", "fit_swc9","fit_swc10", "fit_swc11", "fit_swc12", "fit_swc13", "fit_swc14", "fit_swc15")
-aictab(cand.set = models, modnames = model_names)
+fit_PC1PC2PC3_PC1xPC2_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                               PC1:PC2 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-# mod selection using BIC for geo variables
-fit_LaxLoxE <- lmer(sd_wt_50_ct ~ Lat_s*Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_PC1PC2PC3_PC1xPC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                              PC1:PC3 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-fit_LaLoE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                                    PC1:PC2 + PC1:PC3 + PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE) #not converging
 
-fit_LaLoE_LaxLo_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + 
-                               Lat_s:Long + Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-
-fit_LaLoE_LaxLo_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                               Lat_s:Long_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-
-fit_LaLoE_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                              Lat_s:Elev_m_s + Long:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-
-fit_LaLoE_LaxLo_LaxE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                                    Lat_s:Long_s + Lat_s:Elev_m_s + Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-
-fit_LaLoE_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                          Lat_s:Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLoE_LaxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                         Lat_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLoE_LoxE <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s +
-                         Long_s:Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_PC1PC2PC3_PC1xPC2 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                          PC1:PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC1PC2PC3_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                         PC1:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC1PC2PC3_PC2xPC3 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + PC3 +
+                         PC2:PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
 # two factor models
-fit_LaxLo <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaxE <- lmer(sd_wt_50_ct ~ Lat_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LoxE <-lmer(sd_wt_50_ct ~ Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaLo <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LaE <-lmer(sd_wt_50_ct ~ Lat_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_LoE <- lmer(sd_wt_50_ct ~ Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_PC1xPC2 <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC1xPC3 <- lmer(sd_wt_50_ct ~ PC1*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC2xPC3 <-lmer(sd_wt_50_ct ~ PC2*PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC1PC2 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC1PC3 <-lmer(sd_wt_50_ct ~ PC1 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC2PC3 <- lmer(sd_wt_50_ct ~ PC2 + PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
 # single factor models
-fit_Lat <- lmer(sd_wt_50_ct ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_Long <- lmer(sd_wt_50_ct ~ Long_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
-fit_Elev <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sd_wt_data, REML = FALSE)
+fit_PC1 <- lmer(sd_wt_50_ct ~ PC1 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC2 <- lmer(sd_wt_50_ct ~ PC2 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
+fit_PC3 <- lmer(sd_wt_50_ct ~ PC3 + (1|population) + (1|block) + (1|population:block), data=sw_env_data, REML = FALSE)
 
-models <- list(fit_LaxLoxE, fit_LaLoE, fit_LaLoE_LaxLo_LaxE, fit_LaLoE_LaxLo_LoxE, fit_LaLoE_LaxE_LoxE, fit_LaLoE_LaxLo_LaxE_LoxE, fit_LaLoE_LaxLo, fit_LaLoE_LaxE, fit_LaLoE_LoxE, fit_LaxLo, fit_LaxE, fit_LoxE, fit_LaLo, fit_LaE, fit_LoE, fit_Lat, fit_Long, fit_Elev)
+models <- list(fit_PC1xPC2xPC3, fit_PC1PC2PC3, fit_PC1PC2PC3_PC1xPC2_PC1xPC3, fit_PC1PC2PC3_PC1xPC2_PC2xPC3, fit_PC1PC2PC3_PC1xPC3_PC2xPC3, fit_PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3, fit_PC1PC2PC3_PC1xPC2, fit_PC1PC2PC3_PC1xPC3, fit_PC1PC2PC3_PC2xPC3, fit_PC1xPC2, fit_PC1xPC3, fit_PC2xPC3, fit_PC1PC2, fit_PC1PC3, fit_PC2PC3, fit_PC1, fit_PC2, fit_PC3)
+model_names <- c('PC1xPC2xPC3', 'PC1PC2PC3', 'PC1PC2PC3_PC1xPC2_PC1xPC3', 'PC1PC2PC3_PC1xPC2_PC2xPC3', 'PC1PC2PC3_PC1xPC3_PC2xPC3', 'PC1PC2PC3_PC1xPC2_PC1xPC3_PC2xPC3', 'PC1PC2PC3_PC1xPC2', 'PC1PC2PC3_PC1xPC3', 'PC1PC2PC3_PC2xPC3', 'PC1xPC2', 'PC1xPC3', 'PC2xPC3', 'PC1PC2', 'PC1PC3', 'PC2PC3', 'PC1', 'PC2', 'PC3')
 
-model_names <- c('LaxLoxE', 'LaLoE', 'LaLoE_LaxLo_LaxE', 'LaLoE_LaxLo_LoxE', 'LaLoE_LaxE_LoxE', 'LaLoE_LaxLo_LaxE_LoxE', 'LaLoE_LaxLo', 'LaLoE_LaxE', 'LaLoE_LoxE', 'LaxLo', 'LaxE', 'LoxE', 'LaLo', 'LaE', 'LoE', 'Lat', 'Long', 'Elev')
+# reduced set--more carefully considered, each representing a more clear and interesting hypothesis
+models2 <- list(fit_PC1xPC2xPC3, fit_PC1PC2PC3, fit_PC1xPC2, fit_PC1xPC3, fit_PC2xPC3, fit_PC1PC2, fit_PC1PC3, fit_PC2PC3, fit_PC1, fit_PC2, fit_PC3)
+model_names2 <- c('PC1xPC2xPC3', 'PC1PC2PC3', 'PC1xPC2', 'PC1xPC3', 'PC2xPC3', 'PC1PC2', 'PC1PC3', 'PC2PC3', 'PC1', 'PC2', 'PC3')
 
-bic_sw <- bictab(cand.set = models, modnames = model_names) #Lat only is best model by BIC 
-step(fit_LaxLoxE, k=log(nobs(fit_LaxLoxE)))
+bic_sw <- bictab(cand.set = models, modnames = model_names)
+aic_sw <- aictab(cand.set = models, modnames = model_names, second.ord = F)
 
 
-#### PCA/RDA for a multivariate approach? helpful: http://dmcglinn.github.io/quant_methods/lessons/multivariate_models.html
-install.packages("vegan")
-devtools::install_github("gavinsimpson/ggvegan")
-library(vegan)
-library(ggvegan)
+bic_sw2 <- bictab(cand.set = models2, modnames = model_names2)
+aic_sw2 <- aictab(cand.set = models2, modnames = model_names2, second.ord = F)
 
-my_clim_rda <- rda(clim_df[4:22], scale = T)
-biplot(my_clim_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
-summary(my_clim_rda) #PC1 explains 49%, PC2 explains 18.6%, PC3 explains 11.1%
+?step
 
-# using base R
-my_clim_pca <- prcomp(clim_df[4:22], scale = T) #same as vegan RDA above
-summary(my_pca)
+# Brent suggested including the env PCs (climate + geog) AND the geographic predictors 
+sw_geo_env_data <- sd_wt_data %>% inner_join(dplyr::select(env_data, source, Lat_s, Long_s, Elev_m_s)) %>%
+  inner_join(env_PC_scores)
 
-# regress traits vs clim PCA
-ptm <- pop_trait_means %>% filter(!population %in% c('APPAR', '37'))
-sw_clim_fit <- lm(ptm$seed_weight ~ my_clim_rda$CA$u[,1])
-sw_clim_fit <- lm(ptm$seed_weight ~ my_pca$x[,1])
-#prcomp() and rda() give same result. no association b/w seed weight and first PC of the clim data
-summary(sw_clim_fit)
-plot(ptm$seed_weight ~ my_clim_rda$CA$u[,1])
-plot(ptm$seed_weight ~ my_pca$x[,1]) #only dif compared to RDA is PCA1 isnt scaled?
+# full model
+fit_sw1 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
 
-# try combining with climate predictors?
-vegan_df <- inner_join(pop_trait_means, geo_clim_df)
-vegan_traits <- vegan_df[,2:9]
-vegan_geo <- vegan_df[,11:13]
-vegan_clim <- vegan_df[,14:32] # geo variables 11:13, climate vars are 14:32
-my_rda <- rda(vegan_traits, vegan_geo, scale = T)
-my_rda
-plot(my_rda, type='n', scaling=1)
-orditorp(my_rda, display='sp', cex=0.5, scaling=1, col='blue')
-text(my_rda, display='cn', col='red')
+# three factor geog model
+fit_sw2 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+
+# two factor models
+fit_sw3 <- lmer(sd_wt_50_ct ~ PC1*PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw4 <- lmer(sd_wt_50_ct ~ Lat_s*Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw5 <- lmer(sd_wt_50_ct ~ Lat_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw6 <- lmer(sd_wt_50_ct ~ Long_s*Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+
+fit_sw7 <- lmer(sd_wt_50_ct ~ PC1 + PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw8 <- lmer(sd_wt_50_ct ~ Lat_s + Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw9 <- lmer(sd_wt_50_ct ~ Lat_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw10 <- lmer(sd_wt_50_ct ~ Long_s + Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+
+# Single factor models
+fit_sw11 <- lmer(sd_wt_50_ct ~ Lat_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw12 <- lmer(sd_wt_50_ct ~ Long_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw13 <- lmer(sd_wt_50_ct ~ Elev_m_s + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw14 <- lmer(sd_wt_50_ct ~ PC1 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+fit_sw15 <- lmer(sd_wt_50_ct ~ PC2 + (1|population) + (1|block) + (1|population:block), data=sw_geo_env_data, REML = FALSE)
+
+models3 <- list(fit_sw1, fit_sw2, fit_sw3, fit_sw4, fit_sw5, fit_sw6, fit_sw7, fit_sw8, fit_sw9, fit_sw10, fit_sw11, fit_sw12, fit_sw13, fit_sw14, fit_sw15)
+model_names3 <- c('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15' )
+
+bic_sw_mods3 <- bictab(cand.set = models3, modnames = model_names3)
+aic_sw_mods3 <- aictab(cand.set = models3, modnames = model_names3, second.ord = F)
+
+
+#### Mod selection for each trait of interest: seed weight, fruit fill, number of stems per plant, fruit (and flowers?) per stem, forks per stem, caps diam, stem diam. ####
+# need to specify which variables are transformed vs those 
+
+
+traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
+
+datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
+
+fixefs <- c('PC1*PC2*PC3', 'PC1 + PC2 + PC3', 'PC1*PC2', 'PC1*PC3', 'PC2*PC3', 'PC1 + PC2', 'PC1 + PC3', 'PC2 + PC3', 'PC1', 'PC2', 'PC3') #List of each predictor combination to include in our model selection
+
+results <- list()
+for ( i in 1:length(traits) ){ #loop through each trait
+  trait <- traits[i]
+  data <- datasets[[i]] %>% inner_join(env_PC_scores)
+  
+  # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
+  if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
+    ranefs <- list('(1|population)', '(1|population:block:plant)') #removed two random effects terms bc of singular fits
+  } else {
+    ranefs <- list('(1|population)', '(1|block)', '(1|population:block)')
+  }
+  randstr <- paste(ranefs, collapse=" + ") #Set up the random effects structure for right side of model
+  
+  fits <- list() #Storage for each model fit of trait i
+  for ( j in 1:length(fixefs) ){ #Loop through the different predictor sets we want to compare
+    form <- reformulate(c(fixefs[j], randstr), response=trait) #Set the model formula
+    print(form)
+    fit <- lmer(form, REML = FALSE, data = data) # Finally, fit the actual model!!
+    
+    fits[[j]] <- fit 
+  }
+  bic <- bictab(cand.set = fits, modnames = fixefs)
+  results[[i]] <- bic
+}
+names(results) <- traits
+results
+
+
+
