@@ -26,8 +26,7 @@ library(arm) #for se.ranef()
 
 #' Collection/environmental data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
-  mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
-
+  mutate(source=as.factor(source), population=as.factor(population)) #scale predictors
 
 #' Seed weight data
 sd_wt_data <- read.csv("data/sd_wt_data.csv", header = TRUE) %>%
@@ -40,6 +39,7 @@ ff_data <- read.csv("data/ff_data.csv", header = TRUE) %>%
 #' Stem data
 stem_data <- read.csv("data/stem_data.csv", header = T) %>%
   mutate(source=as.factor(source), block=as.factor(block))
+stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,num_of_stems) %>% unique()
 
 #' Read-in yield data (composite of all the other traits, data frame was created in 01_traits_EDA.R script)
 yield_df <- read.csv("data/yield_df.csv", header=T) %>%

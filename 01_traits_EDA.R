@@ -7,16 +7,16 @@
 #' date: 1.13
 
 #+ results=FALSE, message=FALSE, warning=FALSE
+library(tidyr)
 library(dplyr)
+library(magrittr)
 library(ggplot2)
 library(lme4)
 library(arm)
-library(magrittr)
-library(tidyr)
 
 #' Read-in collection data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
-  mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) #scale predictors
+  mutate(source=as.factor(source), population=as.factor(population)) #scale predictors
 
 #' Read-in fruit-fill data.
 ff_data <- read.csv("data/cleaned_LILE_yield_data_2013_fruit_fill.csv", header=T) %>%
@@ -57,6 +57,7 @@ stem_data <- stem_data %>%
   filter(!source %in% c(2,5,22,32,38)) %>% #exclude mistaken Appar sources
   anti_join(Appar)
 write.csv(stem_data, file = "data/stem_data.csv", row.names = FALSE)
+stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,num_of_stems) %>% unique()
 
 #' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is that in quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
 a <- stem_data %>%
@@ -109,7 +110,7 @@ yield_df <- yield_df %>%
 write.csv(yield_df,file="data/yield_df.csv", row.names = FALSE)
 
 
-#' #### EXPLORATORY DATA ANALYSIS
+#' #### EXPLORATORY DATA ANALYSIS ####
 
 #' Histograms of each stem-related trait.
 #+ results=FALSE, message=FALSE, warning=FALSE

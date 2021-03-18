@@ -8,9 +8,12 @@
 
 #+ results=FALSE, message=FALSE, warning=FALSE
 
+
 #devtools::install_github("jimhester/archive") #for CHELSA climate data
 #remotes::install_github("MirzaCengic/climatedata") #for CHELSA climate data
+
 library(dplyr)
+library(magrittr)
 library(ggplot2)
 #library(interactions) #for interaction plots
 library(rgdal)
@@ -20,7 +23,6 @@ library(rgdal)
 library(remotes)
 library(climatedata)
 library(AICcmodavg)
-library(magrittr)
 library(lme4)
 library(lmerTest)
 library(arm) #for se.ranef()
@@ -28,11 +30,14 @@ library(vegan)
 library(ggvegan)
 
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
-  mutate(source=as.factor(source), population=as.factor(population), Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m))
+  mutate(source=as.factor(source), population=as.factor(population))
 
 geo_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
   filter(!source %in% c(2,5,22,32,38)) %>% #remove mistaken/duplicate Appar
-  filter(!is.na(Lat) | !is.na(Long)) #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
+  filter(!is.na(Lat) | !is.na(Long)) %>% #keep only pops that have coordinates (missing coords for source 37, and Appar doesn't have coords)
+  mutate(Lat_s=scale(Lat), Long_s=scale(Long), Elev_m_s=scale(Elev_m)) # scale predictors
+
+BioClim_codes <- read.csv("BioClim_codes.csv") #this file matches the vague bioclim codes with actual descriptions
 
 #### Get climate data from the CHELSA database ####
 # CHELSA has the bioclim data at high resolution (30 arc sec, ~1km()
@@ -48,7 +53,8 @@ clim_df <- cbind.data.frame(coordinates(points),values) %>%
   tibble::rownames_to_column("population")
 colnames(clim_df)[4:22] <- lapply(colnames(clim_df)[4:22], gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
 
-geo_clim_df <- inner_join(geo_data, clim_df) 
+geo_clim_df <- inner_join(geo_data[1:5], clim_df) 
+rownames(geo_clim_df) <- geo_clim_df[,1] #set source number to the rownames, otherwise we lose these labels in the PCA below.
 
 #' #### Checking for association b/w environmental variables ####
 # Check correlations b/w geographic predictors. No significant correlations, that's good.
@@ -60,11 +66,17 @@ cor.test(geo_data$Lat, geo_data$Elev_m)
 cor.test(geo_data$Long, geo_data$Lat)
 
 # PCA of environmental variables
-rownames(geo_clim_df) <- geo_clim_df[,1]
-my_env_rda <- rda(geo_clim_df[3:24], scale = T) #geo and clim vars
+my_env_rda <- rda(geo_clim_df[3:24], scale = T) #PCA of scaled geo and clim vars (skip column 1 and 2 which have source/population ID)
 summary(my_env_rda)
-my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) #using base R, same as vegan RDA above
-summary(my_env_pca)
+# Get site (source/population) PC scores for use in trait-env model selection
+env_PC_scores <- data.frame(scores(my_env_rda, choices=1:3, display = "sites", scaling=0)) %>%
+  tibble::rownames_to_column("source")
+
+# Using base R, same as vegan RDA above
+my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) 
+scores(my_env_pca)
+biplot(my_env_pca)
+
 
 biplot(my_env_rda,
        display = c("sites", 
@@ -90,8 +102,7 @@ data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
 # plot the eigenvalues
 screeplot(my_env_rda)
 
-# Get loadings of the env vars on each PC
-BioClim_codes <- read.csv("BioClim_codes.csv")
+# Get loadings (scores) of the env vars on each PC
 env_PC1_loadings <- data.frame(scores(my_env_rda, choices=1, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC1))) %>%
@@ -113,13 +124,12 @@ env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species"
   relocate(description, .after = var)
 write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
 
-# Get site (source/population) scores to use in trait-env model selection
-env_PC_scores <- data.frame(scores(my_env_rda, choices=1:3, display = "sites", scaling=0)) %>%
-  tibble::rownames_to_column("source")
-                              
-
-# PCA of just climate vars
+# PCA of just climate vars. Thinking we would use these if we also want to include geographic variables as separate predictors in model selection.
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
+clim_PC_scores <- data.frame(scores(my_clim_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
+  tibble::rownames_to_column("source")
+my_clim_rda$CA$u[,1:2] #alternate way to access loadings of sources i.e. 'sites'
+
 summary(my_clim_rda)
 biplot(my_clim_rda,
        display = c("sites", 
@@ -138,15 +148,11 @@ data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
 
 summary(my_clim_rda)
 
-my_clim_rda$CA$v #access PC scores (loadings) 
-scores(my_clim_rda, choices=1:2, display = "species", scaling = 1) #alternate way to access scores
-
-my_clim_rda$CA$u[,1:2] #loadings of sources i.e. 'sites'
-clim_PCA_scores <- data.frame(scores(my_clim_rda, choices=1:2, display = "sites", scaling=2)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
-  tibble::rownames_to_column("source")
-
-
-
+# clim var loadings/scores
+clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)) %>%
+  tibble::rownames_to_column("var") %>%
+  full_join(dplyr::select(BioClim_codes, var, description)) %>%
+  relocate(description, .after = var)
 
 
 #' #### Model selection of traits vs env PCs ####
@@ -155,12 +161,12 @@ traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "f
 
 datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
 
-fixefs <- c('PC1*PC2*PC3', 'PC1 + PC2 + PC3', 'PC1*PC2', 'PC1*PC3', 'PC2*PC3', 'PC1 + PC2', 'PC1 + PC3', 'PC2 + PC3', 'PC1', 'PC2', 'PC3') #List of each predictor combination to include in our model selection
+fixefs <- c('Lat_s*Long_s*Elev_m_s', 'Lat_s + Long_s + Elev_m_s', 'Lat_s*Long_s', 'Lat_s*Elev_m_s', 'Long_s*Elev_m_s', 'Lat_s + Long_s', 'Lat_s + Elev_m_s', 'Long_s + Elev_m_s', 'Lat_s', 'Long_s', 'Elev_m_s', 'PC1*PC2', 'PC1 + PC2', 'PC1', 'PC2') #List of each predictor combination to include in our model selection. Add interactions of geog/clim?
 
 results <- list()
 for ( i in 1:length(traits) ){ #loop through each trait
   trait <- traits[i]
-  data <- datasets[[i]] %>% inner_join(env_PC_scores)
+  data <- datasets[[i]] %>% inner_join(clim_PC_scores) %>% inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s))
   
   # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
   if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
@@ -174,7 +180,7 @@ for ( i in 1:length(traits) ){ #loop through each trait
   for ( j in 1:length(fixefs) ){ #Loop through the different predictor sets we want to compare
     form <- reformulate(c(fixefs[j], randstr), response=trait) #Set the model formula
     print(form)
-    fit <- lmer(form, REML = FALSE, data = data) # Finally, fit the actual model!!
+    fit <- lmer(form, REML = FALSE, data = data) # Finally, fit the actual model, using maximum likelihood.
     
     fits[[j]] <- fit 
   }
@@ -182,9 +188,16 @@ for ( i in 1:length(traits) ){ #loop through each trait
   results[[i]] <- bic
 }
 names(results) <- traits
-results
+results #log_EST_YIELD ~ Elev_m_s is the only model that doesn't converge. Don't think this is really an issue.
 
-# Brent suggested including the env PCs (climate + geog) AND the geographic predictors. 
+# write bic results tables to files
+
+for ( i in 1:length(results)){
+  df <- data.frame(results[i])
+  write.csv(format(df, digits=4), file=paste0("results_summaries/BIC_results/", names(results)[i], "_BIC_results.csv"))
+}
+
+# Brent suggested includingAND the geographic predictors. 
 
 #' #### Exploring latitudinal clines ####
 
