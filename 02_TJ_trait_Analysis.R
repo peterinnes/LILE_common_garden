@@ -7,9 +7,19 @@ library(lmerTest)
 library(dplyr)
 library(tidyr)
 
+# To do: filter out Appar sources, convert Tom source number to Stan source number/population ID.
+
+TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T) %>%
+  mutate(source=factor(source), Entry=factor(Entry))
+
 #### Stem and capsule data ####
 tj_stems_caps <- read.csv("data/TomJ_2013_stems_caps_ht_diam_surv_ANALYZE_THIS.csv", skip=1, na.strings = ".", header = T) %>% #Spreadsheet has two headers. so we gotta skip the first one
-    mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep))
+  mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep)) %>%
+  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
+  relocate(source, .before=Capsules) %>%
+  inner_join(dplyr::select(env_data, source, site)) %>%
+  relocate(site, .before=Capsules)
+head(tj_stems_caps)
 
 names(tj_stems_caps)[11] <- "surv_4_27_13" #Rename last column since we lost the column name when initially skipping first line. This column has number of plants surviving on 4.27.13 (out of 10 plants initially planted I believe).
 
@@ -95,6 +105,16 @@ ht_data <- pivot_longer(ht_data, names_to = "Plant", values_to = "height", ht_pl
 dia_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, dia.1:dia.10)
 dia_data <- pivot_longer(dia_data, names_to = "Plant", values_to = "dia", dia.1:dia.10)
 
+# How many plants in each plot? We will use this number to corroborate survivorship, in order to estimate per plant capsule and stem numbers. Diam and Height were reportedly measured a week before harvest in October. So they should be the most accurate?
+plants_per_plot <- dia_data %>%
+  na.omit() %>%
+  group_by(Plot) %>%
+  summarise(num_plants = n())
+
+# Should also compare to April and Aug surv data. Could corroborate with caps data as well. 
+
+
+
 fit_ht <- lmer(height ~ -1 + Entry + (1|Rep) + (1|Plot), data = ht_data)
 summary(fit_ht)
 plot(fit_ht)
@@ -103,6 +123,5 @@ fit_dia <- lmer(dia ~ -1 + Entry + (1|Rep) + (1|Plot), data = dia_data)
 summary(fit_dia)
 plot(fit_dia)
 
-# To do: filter out Appar sources, convert Tom source number to Stan source number/population ID.
 
-TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T)
+
