@@ -55,6 +55,10 @@ colnames(clim_df)[4:22] <- lapply(colnames(clim_df)[4:22], gsub, pattern = "CHEL
 
 geo_clim_df <- inner_join(geo_data[1:5], clim_df) 
 rownames(geo_clim_df) <- geo_clim_df[,1] #set source number to the rownames, otherwise we lose these labels in the PCA below.
+head(geo_clim_df)
+
+geo_clim_scaled_df <- geo_clim_df
+geo_clim_scaled_df[3:24] <- apply(geo_clim_scaled_df[3:24], 2, function(x){ scale(x) } )
 
 #' #### Checking for association b/w environmental variables ####
 # Check correlations b/w geographic predictors. No significant correlations, that's good.
@@ -154,6 +158,43 @@ clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "speci
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
 
+# PCA of just temperature vars (bio1-11)
+my_temp_rda <- rda(geo_clim_df[6:16], scale = T)
+data.frame(summary(eigenvals(my_temp_rda)))[2,1:11] %>% 
+  pivot_longer(1:11, names_to = "PC", values_to = "Proportion_Explained") %>%
+  mutate(PC=factor(PC, levels = PC)) %>%
+  # Plot proportion explained
+  ggplot(aes(x=PC, y=Proportion_Explained)) + 
+  geom_col()
+
+autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
+
+temp_PC_scores <- data.frame(scores(my_temp_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
+  tibble::rownames_to_column("source") %>%
+  rename(temp_PC1=PC1, temp_PC2=PC2, temp_PC3=PC3)
+
+autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
+
+
+
+# PCA of just precip variables (bio12-19)
+my_precip_rda <- rda(geo_clim_df[17:24])
+data.frame(summary(eigenvals(my_precip_rda)))[2,1:8] %>% 
+  pivot_longer(1:8, names_to = "PC", values_to = "Proportion_Explained") %>%
+  mutate(PC=factor(PC, levels = PC)) %>%
+  # Plot proportion explained
+  ggplot(aes(x=PC, y=Proportion_Explained)) + 
+  geom_col()
+
+autoplot(my_precip_rda, rows = TRUE, geom = "text", legend = "none")
+
+precip_PC_scores <- data.frame(scores(my_precip_rda, choices=1, display = "sites", scaling=0)) %>%
+  tibble::rownames_to_column("source") %>%
+  rename(precip_PC1=PC1)
+
+
+
+
 
 #' #### Model selection of traits vs env PCs ####
 
@@ -161,12 +202,58 @@ traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "f
 
 datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
 
-fixefs <- c('Lat_s*Long_s*Elev_m_s', 'Lat_s + Long_s + Elev_m_s', 'Lat_s*Long_s', 'Lat_s*Elev_m_s', 'Long_s*Elev_m_s', 'Lat_s + Long_s', 'Lat_s + Elev_m_s', 'Long_s + Elev_m_s', 'Lat_s', 'Long_s', 'Elev_m_s', 'PC1*PC2', 'PC1 + PC2', 'PC1', 'PC2') #List of each predictor combination to include in our model selection. Add interactions of geog/clim?
+#List of each predictor combination to include in our model selection. Add interactions of geog/clim?
+fixefs <- c('Lat_s + Long_s + Elev_m_s + temp_PC1 + temp_PC2 + precip_PC1',
+            'Lat_s + Long_s + Elev_m_s + temp_PC1 + precip_PC1',
+            'Lat_s + Long_s + Elev_m_s + temp_PC2 + precip_PC1',
+            'Lat_s + Long_s + Elev_m_s + temp_PC1',
+            'Lat_s + Long_s + Elev_m_s + temp_PC2',
+            'Lat_s + Long_s + Elev_m_s + precip_PC1',
+            'Lat_s + Long_s + temp_PC1',
+            'Lat_s + Elev_m_s + temp_PC1',
+            'Long_s + Elev_m_s + temp_PC1',
+            'Lat_s + Long_s + precip_PC1',
+            'Lat_s + Elev_m_s + precip_PC1',
+            'Long_s + Elev_m_s + precip_PC1',
+            'Lat_s + temp_PC1 + precip_PC1',
+            'Long_s + temp_PC1 + precip_PC1',
+            'Elev_m_s + temp_PC1 + precip_PC1',
+            'Lat_s + Long_s + temp_PC2',
+            'Lat_s + Elev_m_s + temp_PC2',
+            'Long_s + Elev_m_s + temp_PC2',
+            'Lat_s + temp_PC2 + precip_PC1',
+            'Long_s + temp_PC2 + precip_PC1',
+            'Elev_m_s + temp_PC2 + precip_PC1',
+            'Lat_s + Long_s + Elev_m_s',
+            'Lat_s*Long_s',
+            'Lat_s*Elev_m_s',
+            'Long_s*Elev_m_s',
+            'Lat_s + Long_s',
+            'Lat_s + Elev_m_s',
+            'Long_s + Elev_m_s',
+            'Lat_s',
+            'Long_s',
+            'Elev_m_s',
+            'temp_PC1*precip_PC1',
+            'temp_PC1 + precip_PC1',
+            'temp_PC1',
+            'precip_PC1',
+            'temp_PC2*precip_PC1',
+            'temp_PC2 + precip_PC1',
+            'temp_PC2',
+            'bio03',
+            'bio08',
+            'bio03*bio08'
+            )
 
 results <- list()
 for ( i in 1:length(traits) ){ #loop through each trait
   trait <- traits[i]
-  data <- datasets[[i]] %>% inner_join(clim_PC_scores) %>% inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s))
+  data <- datasets[[i]] %>%
+    inner_join(temp_PC_scores) %>%
+    inner_join(precip_PC_scores) %>%
+    inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s)) %>%
+    inner_join(dplyr::select(geo_clim_scaled_df, source, bio01:bio19))
   
   # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
   if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
@@ -176,7 +263,7 @@ for ( i in 1:length(traits) ){ #loop through each trait
   }
   randstr <- paste(ranefs, collapse=" + ") #Set up the random effects structure for right side of model
   
-  fits <- list() #Storage for each model fit of trait i
+  fits <- list() #Storage for each model of trait i
   for ( j in 1:length(fixefs) ){ #Loop through the different predictor sets we want to compare
     form <- reformulate(c(fixefs[j], randstr), response=trait) #Set the model formula
     print(form)
@@ -188,7 +275,7 @@ for ( i in 1:length(traits) ){ #loop through each trait
   results[[i]] <- bic
 }
 names(results) <- traits
-results #log_EST_YIELD ~ Elev_m_s is the only model that doesn't converge. Don't think this is really an issue.
+results #log_EST_YIELD ~ Elev_m_s doesn't converge. Don't think this is really an issue. It converges w/ REML=T though. weird?
 
 # write bic results tables to files
 
