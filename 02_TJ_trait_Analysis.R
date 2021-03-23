@@ -15,13 +15,11 @@ TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T
 #### Stem and capsule data (Capsules per stem, capsules per plant, stems per plant) ####
 tj_stems_caps <- read.csv("data/TomJ_2013_stems_caps_ht_diam_surv_ANALYZE_THIS.csv", skip=1, na.strings = ".", header = T) %>% #Spreadsheet has two headers. so we gotta skip the first one
   mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep)) %>%
-  inner_join(dplyr::select(TvS_key, source, Entry)) %>% #get 'source' (Stan's version of 'Entry')
-  relocate(source, .before=Capsules) %>%
-  inner_join(dplyr::select(env_data, source, site)) %>% #get 'site' aka source/Entry name
-  relocate(site, .before=Capsules) %>%
-  filter(!source %in% c(2,5,22,32,38)) #filter out the mistaken Appar sources. Same list we filtered out of Stan's data
+  inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
+  relocate(source, .after = Entry) %>%
+  filter(!source %in% c(2,5,22,32,38))
 
-names(tj_stems_caps)[11] <- "surv_4_27_13" #Rename last column since we lost the column name when initially skipping first line. This column has number of plants surviving on 4.27.13 (out of 10 plants initially planted I believe).
+names(tj_stems_caps)[12] <- "surv_4_27_13" #Rename last column since we lost the column name when initially skipping first line. This column has number of plants surviving on 4.27.13 (out of 10 plants initially planted I believe).
 
 head(tj_stems_caps)
 
@@ -32,23 +30,23 @@ tj_stems_caps <- tj_stems_caps %>%
 head(arrange(tj_stems_caps, Entry, Rep), 20L)
 tj_stems_caps$Entry <- as.factor(tj_stems_caps$Entry)
 
-# Caps per stem
+# Caps per stem. log transform.
 fit_CPS <- lmer(log(Capsules/sub_stems) ~ -1 + Entry + (1|Rep), data = tj_stems_caps) 
 exp(ls_means(fit_CPS)$Estimate)
 summary(fit_CPS)
-plot(fit_caps_per_stem)
-qqnorm(resid(fit_caps_per_stem))
+plot(fit_CPS)
+qqnorm(resid(fit_CPS))
 
 # Caps per plant: Capsules/sub_stems * ttl_stems = est_ttl_capsules. Then divide est_ttl_capules by the number of surviving plants in the plot. There might be an issue here with missing data from the 8.20.13 survival counts. 
 # square root transform, this is what Tom originally used. It looks good.
-tj_stems_caps$CPP_tr <- (sqrt(tj_stems_caps$est_ttl_capsules/tj_stems_caps$surviv_8_30_13) - 1) / .5
+tj_stems_caps$CPP_tr <- (sqrt(tj_stems_caps$est_ttl_capsules/tj_stems_caps$surv_4_27_13) - 1) / .5
 fit_CPP <- lmer(CPP_tr ~ -1 + Entry + (1|Rep), data = tj_stems_caps)
 plot(fit_CPP)
 qqnorm(resid(fit_CPP))
 summary(fit_CPP)
 
 # Stems per plant. Use same sqrt transform as before
-tj_stems_caps$spp_tr <- (sqrt(tj_stems_caps$ttl_stems/tj_stems_caps$surviv_8_30_13) - 1) / .5
+tj_stems_caps$spp_tr <- (sqrt(tj_stems_caps$ttl_stems/tj_stems_caps$surv_4_27_13) - 1) / .5
 fit_SPP <- lmer(spp_tr ~ -1 + Entry + (1|Rep), data = tj_stems_caps)
 
 plot(fit_SPP)
@@ -60,17 +58,17 @@ summary(fit_SPP) # How to estimate capsules per plant? est_ttl_capules / surviv_
 tj_biomass <- read.csv("data/TomJ_BiomassFlax2013_14_15_ANALYZE_THIS.csv", skip=1, header = T)
 names(tj_biomass) <- c("Plot", "Rep", "Entry", "num_planted", "ttl_weight_2013", "ttl_stem_2013", "sub_weight_2013", "ttl_weight_2014", "DW_2015", "survivorship_4_27_13")
 
-head(tj_biomass)
-
 tj_biomass[4:10] <- as.integer(unlist(tj_biomass[4:10]))
 tj_biomass[1:3] <- as.factor(unlist(tj_biomass[1:3]))
 
+head(tj_biomass)
+
 tj_biomass <- tj_biomass %>%
-  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
-  relocate(source, .before=num_planted) %>%
-  inner_join(dplyr::select(env_data, source, site)) %>%
-  relocate(site, .before = num_planted) %>%
+  inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
+  relocate(source, .after = Entry) %>%
   filter(!source %in% c(2,5,22,32,38))
+
+dim(tj_biomass) #why is it 256 rows when the other datasets have 254?
 
 tj_biomass$BPP <- tj_biomass$ttl_weight_2013 / tj_biomass$survivorship_4_27_13 #biomass per plant
 tj_biomass$BPP[tj_biomass$BPP == 0] <- NA # convert Zeros in BPP to NA
@@ -81,29 +79,31 @@ plot(fit_biomass)
 qqnorm(resid(fit_biomass))
 
 #### Survival data ####
-tj_surviv <- read.csv("data/TomJ_linum_lewisii_survivorship_flwr_full (ANALYZED IN FILE).csv", skip=1, header = T)
-
+tj_surviv <- read.csv("data/TomJ_linum_lewisii_survivorship_flwr_full (ANALYZED IN FILE).csv", skip=1, header = T) %>%
+  mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep))
 # rename columns and keep only those we need
 tj_surviv <- tj_surviv %>% dplyr::select(Plot, Rep, Entry, X6.12.12, X10.27.12, X4.27.13, X8.30.13, X5.1.14, X8.12.14)
+tj_surviv <- head(tj_surviv, -1) #delete last row which had totals
 names(tj_surviv) <- c("Plot", "Rep", "Entry", "planted_6_12_12", "surviv_10_27_12", "surviv_4_27_13", "surviv_8_30_13", "surviv_5_1_14", "surviv_8_12_14") 
-# join w/ source/site info 
+
+# join w/ source/site info, remove mistaken Appar sources
 tj_surviv <- tj_surviv %>%
-  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
+  inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
   relocate(source, .after = Entry) %>%
-  inner_join(dplyr::select(env_data, source, site)) %>%
-  relocate(site, .after = Entry) %>%
   filter(!source %in% c(2,5,22,32,38))
 
-tj_surviv <- head(tj_surviv, -4) #delete last 4 empty rows
-head(tj_surviv)
+tj_surviv[5:10] <- as.integer(unlist(tj_surviv[4:9])) #convert characters to integers
 
-# Convert "." to 0 for column 5 and onwards.
-na_code <- "."
-tj_surviv [5:9] <- apply(tj_surviv[5:9], 2, function(x){ as.numeric(ifelse(x %in% na_code, 0, x)) } )
+View(tj_surviv)
+dim(tj_surviv)
 
-tj_surviv[4:9] <- as.integer(unlist(tj_surviv[4:9]))
-tj_surviv[1:3] <- as.factor(unlist(tj_surviv[1:3]))
-
+# Convert "." to 0 for column 5 and onwards. Not sure we actually want to do this, in some cases the '.' seems to denote no survival, in other cases it seems to denote missing data. May have to manually corroborate survival.
+#na_code <- "."
+#tj_surviv [5:9] <- apply(tj_surviv[5:9], 2, function(x){ as.numeric(ifelse(x %in% na_code, 0, x)) } )
+#
+#tj_surviv[5:10] <- as.integer(unlist(tj_surviv[4:9]))
+#tj_surviv[1:3] <- as.factor(unlist(tj_surviv[1:3]))
+#
 # First year survival.
 fit_surviv <- lmer(surviv_8_30_13/planted_6_12_12 ~ -1 + Entry + (1|Rep), data = tj_surviv)
 summary(fit_surviv)
@@ -118,18 +118,19 @@ plot(fit_surviv2)
 #### Canopy height and plant diameter data ####
 ht_dia_data <- read.csv("data/TomJ_flax_avg_ht_dia_2013_RAW_DATA.csv", header = T, na.strings = '.') %>%
   mutate(Plot=as.factor(Plot), Rep=as.factor(Rep), Entry=as.factor(Entry)) 
+ht_dia_data <- head(ht_dia_data, -3) #delete 3 empty rows at end
+
+ht_dia_data <- ht_dia_data %>%
+  inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
+  relocate(source, .after = Entry) %>%
+  filter(!source %in% c(2,5,22,32,38)) #filter out mistaken Appar sources
+
 
 ht_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, ht_pl1, ht_pl2, ht_pl3, ht_pl4, ht_pl5)
-ht_data <- pivot_longer(ht_data, names_to = "Plant", values_to = "height", ht_pl1:ht_pl5) %>%
-  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
-  relocate(source, .after = Entry) %>%
-  filter(!source %in% c(2,5,22,32,38))
+ht_data <- pivot_longer(ht_data, names_to = "Plant", values_to = "height", ht_pl1:ht_pl5) 
 
 dia_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, dia.1:dia.10)
-dia_data <- pivot_longer(dia_data, names_to = "Plant", values_to = "dia", dia.1:dia.10) %>%
-  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
-  relocate(source, .after = Entry) %>%
-  filter(!source %in% c(2,5,22,32,38))
+dia_data <- pivot_longer(dia_data, names_to = "Plant", values_to = "dia", dia.1:dia.10) 
 
 # How many plants in each plot? We will use this number to corroborate survivorship, in order to estimate per plant capsule and stem numbers. Diam and Height were reportedly measured a week before harvest in October. So they should be the most accurate? # Should also compare to April and Aug surv data. Could corroborate with caps data as well. 
 plants_per_plot <- dia_data %>%
@@ -137,6 +138,13 @@ plants_per_plot <- dia_data %>%
   group_by(Plot) %>%
   summarise(num_plants = n())
 
+surv <- full_join(plants_per_plot, dplyr::select(tj_surviv, Plot, surviv_4_27_13, surviv_8_30_13)) %>%
+  relocate(surviv_4_27_13, .before = num_plants) %>%
+  relocate(num_plants, .after = surviv_8_30_13)
+
+View(surv)
+
+# Linear models
 fit_ht <- lmer(height ~ -1 + Entry + (1|Rep) + (1|Plot), data = ht_data)
 summary(fit_ht)
 plot(fit_ht)
@@ -147,3 +155,34 @@ plot(fit_dia)
 
 
 
+#' #### Summarize ls-means of all traits ####
+fit_list <- c(fit_CPS, fit_CPP, fit_SPP, fit_biomass, fit_surviv, fit_ht, fit_dia)
+trait_list <- c("Capsules_per_stem", "Capsules_per_plant", "Stems_per_plant", "Biomass_per_plant", "First year survival", "Plant_height", "Plant_diameter")
+results <- list() #list to store means and confidence intervals
+esp_list <- list() #list to store effect size plots
+for (i in 1:length(fit_list) ){
+  fit <- fit_list[[i]]
+  
+  lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+  #names(means)[2] <- "trait_value"
+  
+  # Create effect size plot
+  esp <- ggplot(data=lsmeans, aes(x=lsmean, y=reorder(Entry, lsmean), xmin=lower.CL, xmax=upper.CL)) +
+    geom_point() +
+    geom_errorbar() +
+    ylab("Population") +
+    xlab(trait_list[[i]]) +
+    theme(axis.text.y = element_text(size = 6))
+  
+  esp_list[[i]] <- esp #Store plot
+  
+  names(lsmeans)[2] <- trait_list[[i]] #Change to actual trait name before storing in results
+  results[[i]] <- lsmeans #store means and confidence intervals
+  
+  # Tweak dataframe and write to csv for summary to send to Scott J et al
+  lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort descending trait value to make more readable
+  #write.csv(means_ci, file=paste0("results_summaries/", names(means_ci)[4], "_summary.csv"))
+}
+names(results) <- trait_list
+head(results)
+#### Trait correlations & PCA ####

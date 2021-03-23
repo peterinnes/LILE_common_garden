@@ -24,6 +24,7 @@ library(rstan)
 library(rstanarm)
 library(arm) #for se.ranef()
 
+#### Read in the data. For trait data, we'll use the cleaned/filtered data frames created and written to files in the traits_EDA.R script ####
 #' Collection/environmental data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
   mutate(source=as.factor(source), population=as.factor(population)) #scale predictors
@@ -45,11 +46,11 @@ stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,
 yield_df <- read.csv("data/yield_df.csv", header=T) %>%
   mutate(source=as.factor(source), block=as.factor(block))
 
-#' #### FITTING LINEAR MODELS fir each trait
+#' #### FITTING LINEAR MODELS for each trait
 # see: https://stackoverflow.com/questions/45788123/general-linear-mixed-effect-glmer-heteroscedasticity-modelling regarding modeling heteroscedasticity 
 
 #' 1. Seed weight
-# Fit a fixed-effect model. Population:block interaction accounts for subsampling at the 'plot' level (i.e. multiple plants of the same population grown together in the same plot). Sample sizes are mostly consistent (balanced design), so shrinkage would be minimal anyways if we fitted population as a random effect here.
+# Fit a fixed-effect model. Population:block interaction accounts for sub-sampling at the 'plot' level (i.e. multiple plants of the same population grown together in the same plot). Sample sizes are mostly consistent (balanced design) across populations and blocks, so shrinkage would be minimal anyways if we fitted population as a random effect.
 fit_sd_wt <- lmer(sd_wt_50_ct ~ -1 + population + (1|block) + (1|population:block), data = sd_wt_data)# [-(252:253),]) 
 summary(fit_sd_wt) #Notice right-skew of residuals.
 
@@ -61,41 +62,47 @@ sw_mod_comps <- cbind(fixef(fit_sd_wt), coef(fit_sd_wt2)$population) %>%
   tibble::rownames_to_column("population")
 sw_mod_comps$population <- gsub("population", "", sw_mod_comps$population)
 
-#' 2. Fruit fill mod. Normal distro could suffice here.
+#' 2. Fruit (capsule) fill. Normal distro probably suffices here.
 fit_ff <- lmer(good_fill ~ -1 + population + (1|block) + (1|population:block), data = ff_data)
-ff_fit_summary <- summary(fit_ff)
+plot(fit_ff)
+summary(fit_ff)
 
 ff_data$obsv <- 1:nrow(ff_data)
-fit_ff2 <- glmer(good_sds ~ -1 + population + (1|block) + (1|population:block) + (1|obsv), family="poisson", data = ff_data) #singular fit, Normal distro probably fine
+fit_ff2 <- glmer(good_sds ~ -1 + population + (1|block) + (1|population:block), family="poisson", data = ff_data) #Trying Poisson distro, but getting singular fit. Diagnostic plots don't look great either. Normal distro probably fine
 ff_ff2_summary <- summary(fit_ff2)
 
-#' 3. Number of stems per plant. Normal distro
+#' 3. Number of stems per plant. Normal distro.
 stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,num_of_stems) %>% unique() #Need to filter stem_data to just get rows with number of stems, otherwise this info is duplicated bc there is also fruit, fork count etc for each stem.
 fit_num_stems <- lmer(num_of_stems ~ -1 + population + (1|block) + (1|population:block), data=stems)
 ns_fit_summary <- summary(fit_num_stems)
 
-#' 4. Fruit per stem mod. For this trait and subsequent per-stem traits, we need an additional model term to account for multiple measurements taken from same plant
-stem_data$fruits_tr <- (sqrt(stem_data$fruits) - 1) / .5 #square root transform?
-fit_fruit <- lmer(fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) 
-summary(fit_fruit)
-plot(fit_fruit)
-qqnorm(resid(fit_fruit))
+#' 4. Fruit (capsules) per stem mod. square root transformed. For this trait and subsequent per-stem traits, we need an additional model term to account for multiple measurements taken from same plant
+stem_data$sqr_fruits <- (sqrt(stem_data$fruits) - 1) / .5 #square root transform helps somewhat. 
+stem_data$log_fruits <- log(ifelse(stem_data$fruits==0,0.1,stem_data$fruits)) #log transform makes it worse.
+
+fit_sqr_fruits <- lmer(sqr_fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) 
+summary(fit_sqr_fruits)
+plot(fit_sqr_fruits)
+qqnorm(resid(fit_sqr_fruits))
 
 # try negative binomial instead?
-fit_fruit_nb <- glmmTMB(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") 
+fit_fruits_nb <- glmmTMB(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") 
 
-#' 5. Buds/flowers per stem mod
-fit_bf <- lmer(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
-summary(fit_bf)
+#' 5. Buds/flowers per stem model. square root transform.
+stem_data$sqr_bds_flow <- (sqrt(stem_data$bds_flow) - 1) / .5
+fit_sqr_bf <- lmer(sqr_bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
+plot(fit_sqr_bf)
+qqnorm(resid(fit_sqr_bf))
 
 # Trying other distros. neither seem that promising
 fit_bf_nb <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2")
 fit_bf_p <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "poisson")
   
-#' 6. Forks per stem
-fit_forks <- lmer(forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
+#' 6. Forks per stem. square root transform.
+stem_data$sqr_forks <- (sqrt(stem_data$forks) - 1) / .5
+fit_sqr_forks <- lmer(sqr_forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. It explains ~0 variance, leaving this term out. 
 
-fit_forks_nb <- glmmTMB(forks ~ (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") #trying negative binom with glmmTMB. Doesn't seem much better
+fit_forks_nb <- glmmTMB(forks ~ (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") #trying negative binom with glmmTMB. Doesn't look great. will stick with square root transform. 
 
 #' 7. Stem diameter
 stem_data$log_diam_stem <- log(stem_data$diam_stem) #log transform
@@ -111,28 +118,26 @@ yield_df$log_EST_YIELD <- log(yield_df$EST_YIELD)
 fit_log_yield <- lmer(log_EST_YIELD ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
 ly_fit_summary <- summary(fit_log_yield)
 
-fit_log_yield2 <- lmer(log_EST_YIELD ~ (1|population) + (1|block) + (1|population:block), data=yield_df) 
-fit_yield <- lmer(EST_YIELD ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
-summary(fit_yield)
-yield_fit_summary <- summary(fit_yield)
+#' 10. Estimated fecundity (seeds per plant): Fruit fill x (Fruits per stem + Buds_flowers per stem) x Stems per plant
+yield_df$EST_fecundity <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
+yield_df$log_EST_fecundity <- log(yield_df$EST_fecundity)
+fit_log_fecundity <- lmer(log_EST_fecundity ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
+summary(fit_log_fecundity) #a lot of variation, mostly at the individual plant level (residual)
+plot(fit_log_fecundity)
+qqnorm(resid(fit_log_fecundity))
 
-fit_yield2 <- lmer(EST_YIELD ~ (1|population) + (1|block) + (1|population:block), data=yield_df)
-summary(fit_yield2)
+#' 11. Capsules + Buds/Flowers per plant. square root transform
+stem_data$caps_bds_flows <- stem_data$fruits + stem_data$bds_flow
+stem_data$sqr_caps_bds_flows <- (sqrt(stem_data$caps_bds_flows) - 1) / .5
+fit_sqr_cbf <- lmer(sqr_caps_bds_flows ~ -1 + population + (1|block) + (1|population:block:plant), data=stem_data)
 
-fit_yield_glmer <- glmer(EST_YIELD ~ (1|population) + (1|block) + (1|population:block), family=Gamma(link="log"), data=yield_df) #fails to converge when population is a fixed effect.
+summary(fit_sqr_cbf)
+plot(fit_sqr_cbf)
+qqnorm(resid(fit_sqr_cbf))
 
-summary(fit_yield_glmer)
-
-
-#' 10. Estimated fecundity — Fruit fill x (Fruits per stem + Buds_flowers per stem) x Stems per plant
-yield_df$EST_seeds_per_plant <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
-fit_num_seeds <- lmer(EST_seeds_per_plant ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
-summary(fit_num_seeds) #a lot of variation, mostly at the individual plant level (residual)
-
-
-#' #### Model DIAGNOSTICS
-fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_fruit, fit_bf, fit_forks, fit_log_stemd, fit_capsd, fit_log_yield)
-trait_list <- c("Seed_weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield")
+#' #### Model DIAGNOSTICS ####
+fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
+trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "Capsules_per_stem", "Buds_flowers_per_stem", "Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
 fvr_list <- list()
 qqp_list <- list()
 hist_list <- list()
@@ -178,7 +183,7 @@ dev.off()
 
 
 
-#' misc additional diagnostics and alternative model diagnostics
+#' misc model diagnostics
 #' 1. Seed weight
 # sw outliers
 sw_resids <- data.frame(fitted=scale(fitted(fit_sd_wt)), resid=scale(resid(fit_sd_wt)))
@@ -194,19 +199,19 @@ ggplot(data=ff2_resid, aes(x=resid, y=stat(density))) +
 #' 3. Num stems
 
 #' 4. Fruit per stem
-fruit_nb_simres <- simulateResiduals(fit_fruit_nb)
+fruit_nb_simres <- simulateResiduals(fit_sqr_fruits_nb)
 plot(fruit_nb_simres) #not any better, really
 plotQQunif(fruit_nb_simres)
 
 #' 5. Buds/flowers per stem
 # diagnostics for nbinom and poisson fits
-summary(fit_bf_nb)
-bf_nb_simres <- simulateResiduals(fit_bf_nb)
+summary(fit_sqr_bf_nb)
+bf_nb_simres <- simulateResiduals(fit_sqr_bf_nb)
 # not entirely sure how to interpret the DHARMa diagnostics
-plotQQunif(bf_nb_simres) # all the model deviations are significant
+plotQQunif(bf_nb_simres) 
 plotResiduals(bf_nb_simres)
 
-bf_pois_simres <- simulateResiduals(fit_bf_p)
+bf_pois_simres <- simulateResiduals(fit_sqr_bf_p)
 plotQQunif(bf_pois_simres) # all the model deviations are significant
 plotResiduals(bf_pois_simres)
 
@@ -245,26 +250,27 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
-
-#' #### Summarize ls-means of all traits
-fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_fruit, fit_bf, fit_forks, fit_log_stemd, fit_capsd, fit_log_yield)
-trait_list <- c("Seed_weight", "Fruit_fill", "Stems", "Fruits", "Buds_flowers", "Forks", "log_Stem_dia", "Capsule_dia", "log_Est_yield")
+#### Summarize ls-means of all traits ####
+fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_sqr_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
+trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "sqr_Capsules_per_stem", "sqr_Buds_flowers_per_stem", "sqr_Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
 results <- list() #list to store means and confidence intervals
 esp_list <- list() #list to store effect size plots
 for (i in 1:length(fit_list) ){
   fit <- fit_list[[i]]
   
-  means <- as.data.frame(fixef(fit)) %>% #Get means
+  means <- as.data.frame(fixef(fit)) %>% #Get ls-means
     tibble::rownames_to_column(c("population"))
   names(means)[2] <- "trait_value"
   
   ci <- as.data.frame(confint(fit)) %>% #Get confidence intervals
     tibble::rownames_to_column(c("population"))
     names(ci)[2:3] <- c("lwr", "upr")
-
+    
+  # join means and confidence intervals
   means_ci <- inner_join(means, ci)
   means_ci$population <- gsub("population", "", means_ci$population)
   means_ci <- dplyr::select(env_data, population, source, site) %>% inner_join(means_ci)
+  
   # Create effect size plot
   esp <- ggplot(data=means_ci, aes(x=trait_value, y=reorder(site, trait_value), xmin=lwr, xmax=upr)) +
     geom_point() +
@@ -278,9 +284,10 @@ for (i in 1:length(fit_list) ){
   names(means_ci)[4] <- trait_list[[i]] #Change to actual trait name before storing in results
   results[[i]] <- means_ci #store means and confidence intervals
   
-  # Tweak dataframe and write to csv for summary to send to Scott J et al
-  means_ci <- means_ci %>% arrange(-means_ci[4]) #sort descending trait value to make more readable
-  write.csv(means_ci, file=paste0("results_summaries/", names(means_ci)[4], "_summary.csv"))
+  # sort by descending trait value to make more readable
+  means_ci <- means_ci %>% arrange(-means_ci[4]) 
+  # write to csv for summary to send to Scott J et al
+  #write.csv(means_ci, file=paste0("results_summaries/", names(means_ci)[4], "_summary.csv"))
 }
 
 # Join all the effect size plots together
@@ -289,7 +296,9 @@ png("plots/traits_esp.png", width=12, height=9, res=300, units="in")
 esp_grid
 dev.off()
 
-#' #### Trait pairwise pearson correlations, performed with population trait means from above
+#### Trait pairwise pearson correlations ####
+# performed with population trait means from above
+# DO I NEED TO BACK TRANSFORM POPULATION MEANS before calculating the correlations?
 # Gather just the trait ls-means together (no conf intervals)
 #pop_trait_means <- data.frame(population=results[[1]]$population)
 pop_trait_means <- data.frame(site=results[[1]]$site)
@@ -301,10 +310,11 @@ write.csv(pop_trait_means, file="data/pop_trait_means.csv", row.names = FALSE) #
 library(ggcorrplot)
 
 trait_corr_df <- pop_trait_means %>%
-  mutate(ratio_bf_to_fruit=buds_and_flowers_per_stem/fruits_per_stem) %>%
-  filter(!population=='APPAR') #exclude Appar bc different species
-corr_mat <- round(cor(trait_corr_df[,2:10], method=c("pearson"), use = "complete.obs"),4)
-p_mat <- cor_pmat(trait_corr_df[,2:10])
+  mutate(ratio_bf_to_caps=sqr_Buds_flowers_per_stem/sqr_Capsules_per_stem) %>%
+  filter(!site=='Appar') #exclude Appar bc different species
+
+corr_mat <- round(cor(trait_corr_df[,2:11], method=c("pearson"), use = "complete.obs"),4)
+p_mat <- cor_pmat(trait_corr_df[,2:11])
 head(p_mat)
 quartz()
 corr_plot <- ggcorrplot(corr_mat, hc.order = TRUE,type = "lower", lab = TRUE, p.mat=p_mat, insig = "blank", lab_size = 3, tl.cex = 7, show.legend = FALSE, title = "Correlations of least-square means")
@@ -331,23 +341,29 @@ ggplot(data = melted_corr_mat, aes(Var2, Var1, fill = value))+
   xlab("")
 coord_fixed()
 
-#' #### PCA of population trait means
+#### PCA of population trait means ####
 library(vegan)
 library(ggvegan)
 # with source as rownames/labels
-pop_trait_means <- full_join(pop_trait_means, dplyr::select(env_data, source, population))
-temp <- pop_trait_means[,-1]
-rownames(temp) <- temp[,10]
-temp <- temp[,-10]
-pop_trait_means <- temp
+pop_trait_means <- inner_join(pop_trait_means, dplyr::select(env_data, source, site)) %>%
+  relocate(source, .before = site)
 
-# with population id as rownames/labels
 temp <- pop_trait_means[,-1]
-rownames(temp) <- pop_trait_means[,1]
-pop_trait_means <- temp
+rownames(temp) <- temp[,1]
+temp <- temp[,-1]
 
-my_trait_rda <- rda(na.omit(pop_trait_means), scale = T) #scale everything bc they are vastly different units. Also don't use EST_YIELD (14th col) since that was a composite index of the other values
+my_trait_rda <- rda(temp, scale = T) #scale everything bc they are vastly different units.
+# Also dshould we include EST_YIELD and EST_fecundity since they are composites of the other values?
 summary(my_trait_rda)
+
+# Eigenvalue plot
+data.frame(summary(eigenvals(my_trait_rda)))[2,1:10] %>% 
+  pivot_longer(1:10, names_to = "PC", values_to = "Proportion_Explained") %>%
+  mutate(PC=factor(PC, levels = PC)) %>%
+  # Plot proportion explained
+  ggplot(aes(x=PC, y=Proportion_Explained)) + 
+  geom_col()
+
 # Base R biplot with labels
 biplot(my_trait_rda,
        display = c("sites", 
@@ -363,7 +379,6 @@ autoplot(my_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic ver
 library(ggrepel)
 pops_rda <- fortify(my_trait_rda, display='sites')
 traits_rda <- fortify(my_trait_rda, display='species')
-quartz()
 trait_pca <- ggplot() +
   geom_point(data=pops_rda, aes(x = PC1, y = PC2), shape=1, size=2, alpha=0.75) +
   #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
@@ -375,7 +390,8 @@ trait_pca <- ggplot() +
                 hjust="inward",vjust=0.75*(1-sign(PC2))), 
             color="red", size=3, alpha=0.5) +
   theme_minimal()
-png("plots/trait_pca2.png", width=9, height=9, res=300, units="in")
+
+png("plots/Ephraim_traits_PCA.png", width=9, height=9, res=300, units="in")
 trait_pca
 dev.off()
 

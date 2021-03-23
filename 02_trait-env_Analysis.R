@@ -128,6 +128,17 @@ env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species"
   relocate(description, .after = var)
 write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
 
+
+# Bent wants me to check bio vars 03, 04, 08, 11, 18
+cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio03)
+cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio04)
+cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio08)
+plot(env_PC_scores$PC2, geo_clim_scaled_df$bio11)
+cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio18)
+
+
+
+
 # PCA of just climate vars. Thinking we would use these if we also want to include geographic variables as separate predictors in model selection.
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
 clim_PC_scores <- data.frame(scores(my_clim_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
@@ -135,13 +146,15 @@ clim_PC_scores <- data.frame(scores(my_clim_rda, choices=1:3, display = "sites",
 my_clim_rda$CA$u[,1:2] #alternate way to access loadings of sources i.e. 'sites'
 
 summary(my_clim_rda)
+summary(eigenvals(my_clim_rda))
+
 biplot(my_clim_rda,
        display = c("sites", 
                    "species"),
        type = c("text",
                 "points"))
 ordilabel(my_clim_rda, dis="sites", cex=0.5)
-summary(eigenvals(my_clim_rda))
+autoplot(my_clim_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
 data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>% 
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
@@ -149,8 +162,6 @@ data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
   # Plot proportion explained
   ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
-
-summary(my_clim_rda)
 
 # clim var loadings/scores
 clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)) %>%
@@ -160,6 +171,9 @@ clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "speci
 
 # PCA of just temperature vars (bio1-11)
 my_temp_rda <- rda(geo_clim_df[6:16], scale = T)
+
+autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
+
 data.frame(summary(eigenvals(my_temp_rda)))[2,1:11] %>% 
   pivot_longer(1:11, names_to = "PC", values_to = "Proportion_Explained") %>%
   mutate(PC=factor(PC, levels = PC)) %>%
@@ -167,18 +181,15 @@ data.frame(summary(eigenvals(my_temp_rda)))[2,1:11] %>%
   ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
 
-autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
-
 temp_PC_scores <- data.frame(scores(my_temp_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
   tibble::rownames_to_column("source") %>%
-  rename(temp_PC1=PC1, temp_PC2=PC2, temp_PC3=PC3)
-
-autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
-
-
+  rename(temp1=PC1, temp2=PC2, temp3=PC3)
 
 # PCA of just precip variables (bio12-19)
 my_precip_rda <- rda(geo_clim_df[17:24])
+
+autoplot(my_precip_rda, rows = TRUE, geom = "text", legend = "none")
+
 data.frame(summary(eigenvals(my_precip_rda)))[2,1:8] %>% 
   pivot_longer(1:8, names_to = "PC", values_to = "Proportion_Explained") %>%
   mutate(PC=factor(PC, levels = PC)) %>%
@@ -186,64 +197,65 @@ data.frame(summary(eigenvals(my_precip_rda)))[2,1:8] %>%
   ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
 
-autoplot(my_precip_rda, rows = TRUE, geom = "text", legend = "none")
-
 precip_PC_scores <- data.frame(scores(my_precip_rda, choices=1, display = "sites", scaling=0)) %>%
   tibble::rownames_to_column("source") %>%
-  rename(precip_PC1=PC1)
-
-
-
+  rename(precip=PC1)
 
 
 #' #### Model selection of traits vs env PCs ####
 
-traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
+traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "sqr_fruits", "sqr_bds_flow", "sqr_forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
 
 datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
 
 #List of each predictor combination to include in our model selection. Add interactions of geog/clim?
-fixefs <- c('Lat_s + Long_s + Elev_m_s + temp_PC1 + temp_PC2 + precip_PC1',
-            'Lat_s + Long_s + Elev_m_s + temp_PC1 + precip_PC1',
-            'Lat_s + Long_s + Elev_m_s + temp_PC2 + precip_PC1',
-            'Lat_s + Long_s + Elev_m_s + temp_PC1',
-            'Lat_s + Long_s + Elev_m_s + temp_PC2',
-            'Lat_s + Long_s + Elev_m_s + precip_PC1',
-            'Lat_s + Long_s + temp_PC1',
-            'Lat_s + Elev_m_s + temp_PC1',
-            'Long_s + Elev_m_s + temp_PC1',
-            'Lat_s + Long_s + precip_PC1',
-            'Lat_s + Elev_m_s + precip_PC1',
-            'Long_s + Elev_m_s + precip_PC1',
-            'Lat_s + temp_PC1 + precip_PC1',
-            'Long_s + temp_PC1 + precip_PC1',
-            'Elev_m_s + temp_PC1 + precip_PC1',
-            'Lat_s + Long_s + temp_PC2',
-            'Lat_s + Elev_m_s + temp_PC2',
-            'Long_s + Elev_m_s + temp_PC2',
-            'Lat_s + temp_PC2 + precip_PC1',
-            'Long_s + temp_PC2 + precip_PC1',
-            'Elev_m_s + temp_PC2 + precip_PC1',
+fixefs <- c('Lat_s + Long_s + Elev_m_s + temp1 + temp2 + precip',
+            'Lat_s + Long_s + Elev_m_s + temp1 + precip',
+            'Lat_s + Long_s + Elev_m_s + temp2 + precip',
+            'Lat_s + Long_s + Elev_m_s + temp1',
+            'Lat_s + Long_s + Elev_m_s + temp2',
+            'Lat_s + Long_s + Elev_m_s + precip',
+            'Lat_s + Long_s + temp1',
+            'Lat_s + Elev_m_s + temp1',
+            'Long_s + Elev_m_s + temp1',
+            
+            'Lat_s + Long_s + precip',
+            'Lat_s + Elev_m_s + precip',
+            'Long_s + Elev_m_s + precip',
+            
+            'Lat_s + temp1 + precip',
+            'Long_s + temp1 + precip',
+            'Elev_m_s + temp1 + precip',
+            
+            'Lat_s + Long_s + temp2',
+            'Lat_s + Elev_m_s + temp2',
+            'Long_s + Elev_m_s + temp2',
+            
+            'Lat_s + temp2 + precip',
+            'Long_s + temp2 + precip',
+            'Elev_m_s + temp2 + precip',
+            
             'Lat_s + Long_s + Elev_m_s',
+            
             'Lat_s*Long_s',
             'Lat_s*Elev_m_s',
             'Long_s*Elev_m_s',
+            
             'Lat_s + Long_s',
             'Lat_s + Elev_m_s',
             'Long_s + Elev_m_s',
+            
             'Lat_s',
             'Long_s',
             'Elev_m_s',
-            'temp_PC1*precip_PC1',
-            'temp_PC1 + precip_PC1',
-            'temp_PC1',
-            'precip_PC1',
-            'temp_PC2*precip_PC1',
-            'temp_PC2 + precip_PC1',
-            'temp_PC2',
-            'bio03',
-            'bio08',
-            'bio03*bio08'
+            'temp1*precip',
+            'temp1 + precip',
+            'temp1',
+            'precip',
+            'temp2*precip',
+            'temp2 + precip',
+            'temp2'
+            
             )
 
 results <- list()
@@ -252,11 +264,10 @@ for ( i in 1:length(traits) ){ #loop through each trait
   data <- datasets[[i]] %>%
     inner_join(temp_PC_scores) %>%
     inner_join(precip_PC_scores) %>%
-    inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s)) %>%
-    inner_join(dplyr::select(geo_clim_scaled_df, source, bio01:bio19))
+    inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s))
   
   # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
-  if( traits[i] %in% c("fruits", "bds_flow", "forks", "log_diam_stem", "diam_caps")){
+  if( traits[i] %in% c("sqr_fruits", "sqr_bds_flow", "sqr_forks", "log_diam_stem", "diam_caps")){
     ranefs <- list('(1|population)', '(1|population:block:plant)') #removed two random effects terms bc of singular fits
   } else {
     ranefs <- list('(1|population)', '(1|block)', '(1|population:block)')
