@@ -46,7 +46,7 @@ stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,
 yield_df <- read.csv("data/yield_df.csv", header=T) %>%
   mutate(source=as.factor(source), block=as.factor(block))
 
-#' #### FITTING LINEAR MODELS for each trait
+#' #### FITTING LINEAR MODELS for each trait ####
 # see: https://stackoverflow.com/questions/45788123/general-linear-mixed-effect-glmer-heteroscedasticity-modelling regarding modeling heteroscedasticity 
 
 #' 1. Seed weight

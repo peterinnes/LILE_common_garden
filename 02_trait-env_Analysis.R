@@ -27,6 +27,7 @@ library(lme4)
 library(lmerTest)
 library(arm) #for se.ranef()
 library(vegan)
+library(ggrepel)
 library(ggvegan)
 
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
@@ -45,6 +46,7 @@ chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat,
                      row.names = geo_data$population) %>% na.omit()
+
 points <- SpatialPoints(coords, proj4string = chelsa@crs)
 
 values <- raster::extract(chelsa,points) #previously raster::extract(r,points)
@@ -95,6 +97,21 @@ dev.off()
 
 autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
+# plot using ggrepel and ggplot
+pops <- fortify(my_env_rda, display='sites')
+clims <- fortify(my_env_rda, display='species')
+env_pca_plot <- ggplot() +
+  geom_point(data=pops, aes(x = PC1, y = PC2), shape=1, size=2, alpha=0.75) +
+  #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
+  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=3) +
+  geom_segment(data=clims, aes(x=0, xend=PC1, y=0, yend=PC2), 
+               color="red", alpha=0.5, arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text(data=clims, 
+            aes(x=PC1,y=PC2,label=Label,
+                hjust="inward",vjust=0.75*(1-sign(PC2))), 
+            color="red", size=3, alpha=0.5) +
+  theme_minimal()
+
 # Plot of proportion variance explained
 data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
@@ -127,7 +144,6 @@ env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species"
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
 write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
-
 
 # Bent wants me to check bio vars 03, 04, 08, 11, 18
 cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio03)
