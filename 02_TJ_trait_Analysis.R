@@ -73,7 +73,7 @@ bm_summary <- tj_biomass %>%
 
 tj_biomass$Entry <- Plot_Entry_key$Entry #replace Plot-Entry matches with corrected version from stem/caps data. 
 
-# Join with source info, filter out mistaken Appar accessions.
+# Join with Stan's 'source' IDs, filter out mistaken Appar accessions.
 tj_biomass <- tj_biomass %>%
   inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
   relocate(source, .after = Entry) %>%
@@ -86,14 +86,26 @@ bm_summary2 <- full_join(tj_biomass, dplyr::select(tj_stems_caps, Plot, entry = 
   summarise(n=n())
 
 # Linear models
+# Total weight (biomass per plot, which encorporates survival)
+tj_biomass$ttl_weight_2013_tr <- (sqrt(tj_biomass$ttl_weight_2013) - 1) / 0.5 #square root transform
+fit_biomass <- lmer(ttl_weight_2013_tr ~ -1 + Entry + (1|Rep), data=tj_biomass)
+plot(fit_biomass)
+qqnorm(resid(fit_biomass))
+
 # Biomass per plant
 tj_biomass$BPP <- tj_biomass$ttl_weight_2013 / tj_biomass$survivorship_4_27_13 
 tj_biomass$BPP[tj_biomass$BPP == 0] <- NA #convert Zeros in BPP to NA
 tj_biomass$BPP_tr <- (sqrt(tj_biomass$BPP) - 1) / 0.5 #square root transform
 
-fit_biomass <- lmer(BPP_tr ~ -1 + Entry + (1|Rep), data=tj_biomass)
-plot(fit_biomass)
-qqnorm(resid(fit_biomass))
+fit_bpp <- lmer(BPP_tr ~ -1 + Entry + (1|Rep), data=tj_biomass)
+plot(fit_bpp)
+qqnorm(resid(fit_bpp))
+
+biomass_lsmeans <- as.data.frame(lsmeans(fit_bpp, "Entry")) %>%
+  inner_join(dplyr::select(TvS_key, source, Entry)) %>%
+  mutate(btr_lsmean=((lsmean / 2) + 1)^2)
+
+head(biomass_lsmeans)
 
 #### Canopy height and plant diameter data ####
 ht_dia_data <- read.csv("data/TomJ_flax_avg_ht_dia_2013_RAW_DATA.csv", header = T, na.strings = '.') %>%
@@ -192,7 +204,7 @@ plot(fit_surviv2)
 
 #### Summarize ls-means of all traits ####
 # leaving out fit_surviv for now.
-tj_fit_list <- c(fit_CPS, fit_CPP, fit_SPP, fit_biomass, fit_ht, fit_dia)
+tj_fit_list <- c(fit_CPS, fit_CPP, fit_SPP, fit_bpp, fit_ht, fit_dia)
 tj_trait_list <- c("Capsules_per_stem", "Capsules_per_plant", "Stems_per_plant", "Biomass_per_plant", "Plant_height", "Plant_diameter")
 tj_results <- list() #list to store means and confidence intervals
 tj_esp_list <- list() #list to store effect size plots
@@ -224,7 +236,7 @@ for (i in 1:length(tj_fit_list) ){
 names(tj_results) <- tj_trait_list
 head(tj_results)
 
-#### Trait correlations & PCA ####
+#### Trait correlations & PCA. Need to back transform population means. 
 library(vegan)
 library(ggvegan)
 
@@ -255,3 +267,43 @@ ordilabel(tj_trait_rda, dis="sites", cex=0.5)
 autoplot(tj_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic
 
 # Trait correlations. Need to back transform the lsmeans in order to use pearson correlations. sqr back transform = ((tr / 2) + 1)^2.
+
+#### PC transfer distance test for local adaptation ####
+library(climatedata)
+library(sp)
+library(vegan)
+
+milville_coords <- data.frame(Long=-111.816, Lat=41.656)
+chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
+
+milville_point <- SpatialPoints(milville_coords, proj4string = chelsa@crs)
+
+milville_value <- data.frame(raster::extract(chelsa, milville_point)) #previously raster::extract(r,points)
+colnames(milville_value) <- lapply(colnames(milville_value), gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
+
+milville_clim <- cbind.data.frame(milville_coords, milville_value) %>%
+  mutate(source="MILVILLE_GARDEN", population=NA, Elev_m=1407)
+
+loc_adapt_df <- full_join(geo_clim_df, milville_clim)
+rownames(loc_adapt_df) <- loc_adapt_df[,1] #set source number to the rownames, otherwise we lose these labels in the PCA below.
+
+loc_adapt_rda <- rda(loc_adapt_df[3:24], scale = T)
+summary(loc_adapt_rda)
+# Get site (source/population) PC scores for use in trait-env model selection
+loc_adapt_PC_scores <- data.frame(scores(loc_adapt_rda, choices=1:3, display = "sites", scaling=0)) %>%
+  tibble::rownames_to_column("source")
+
+milville_garden_pc1 <- filter(loc_adapt_PC_scores, source=="MILVILLE_GARDEN")$PC1
+milville_garden_pc2 <- filter(loc_adapt_PC_scores, source=="MILVILLE_GARDEN")$PC2
+
+dist_from_garden <- data.frame(source=loc_adapt_PC_scores$source, pc_trd=(milville_garden_pc1 - loc_adapt_PC_scores$PC1))
+
+biomass_vs_dist_df <- inner_join(dist_from_garden, dplyr::select(biomass_lsmeans, source, biomass=btr_lsmean)) 
+
+ggplot(data=biomass_vs_dist_df, aes(x=pc_trd, y= biomass)) +
+  geom_point() +
+  geom_text(aes(label = source))
+
+biomass_vs_dist_df$pc_trd2 <- biomass_vs_dist_df$pc_trd^2
+biomass_trd_fit <- lm(biomass ~ pc_trd + pc_trd2, data=biomass_vs_dist_df)
+summary(biomass_trd_fit)

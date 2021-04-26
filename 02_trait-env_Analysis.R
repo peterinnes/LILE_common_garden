@@ -145,7 +145,7 @@ env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species"
   relocate(description, .after = var)
 write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
 
-# Bent wants me to check bio vars 03, 04, 08, 11, 18
+# Brent wants me to check bio vars 03, 04, 08, 11, 18
 cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio03)
 cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio04)
 cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio08)
