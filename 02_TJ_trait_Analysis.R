@@ -3,11 +3,12 @@
 # Peter Innes
 
 library(ggplot2)
+library(lme4)
 library(lmerTest)
 library(dplyr)
 library(tidyr)
 
-# To do: filter out Appar sources, convert Tom source number to Stan source number/population ID.
+# Key to convert Tom 'Entry' number to Stan 'source' number/population ID.
 
 TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T) %>%
   mutate(source=factor(source), Entry=factor(Entry))
@@ -16,7 +17,7 @@ TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T
 tj_stems_caps <- read.csv("data/TomJ_2013_stems_caps_ht_diam_surv_ANALYZE_THIS.csv", skip=1, na.strings = ".", header = T) %>% #Spreadsheet has two headers. so we gotta skip the first one
   mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep))
 
-# summarise. Entry 5 has 10 reps when each entry should only have 8. Data mis-entered?
+# summarise. Entry 5 has 10 reps when each entry should only have 8. Data mis-entered
 sc_summary <- tj_stems_caps %>%
   group_by(Entry) %>%
   summarise(n=n())
@@ -24,12 +25,13 @@ sc_summary <- tj_stems_caps %>%
 # Fix data entry error, change plots 134 and 265 from Entry 5 to Entry 6
 tj_stems_caps$Entry[134] <- 6
 tj_stems_caps$Entry[265] <- 6
-Plot_Entry_key <- dplyr::select(tj_stems_caps, Plot, Entry)
+Plot_Entry_key <- dplyr::select(tj_stems_caps, Plot, Entry) #Save the corrected Plot-Entry combinations in order to fix other trait data with same issue
 
 tj_stems_caps <- tj_stems_caps %>% 
   inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
   relocate(source, .after = Entry) %>%
   filter(!source %in% c(2,5,22,32,38)) #filter out mistaken Appar sources
+
 names(tj_stems_caps)[12] <- "surv_4_27_13" #Rename last column since we lost the column name when initially skipping first line. This column has number of plants surviving on 4.27.13 (out of 10 plants initially planted I believe).
 
 dim(tj_stems_caps)
@@ -44,15 +46,21 @@ plot(fit_CPS)
 qqnorm(resid(fit_CPS))
 
 # Caps per plant: Capsules/sub_stems * ttl_stems = est_ttl_capsules. Then divide est_ttl_capules by the number of surviving plants in the plot. Using the survival data from the tj_stems_caps spreadsheet--this closely matches survival counts taken later in August, closer to Harvest (but this Aug data is incomplete so we don't want to use it directly)
-# square root transform, this is what Tom originally used. It looks good.
-tj_stems_caps$CPP_tr <- (sqrt(tj_stems_caps$est_ttl_capsules/tj_stems_caps$surv_4_27_13) - 1) / .5
+
+# square root transform, this is what Tom used.
+tj_stems_caps$CPP_tr <- sqrt(tj_stems_caps$est_ttl_capsules/tj_stems_caps$surv_4_27_13)
+tj_stems_caps$ttl_caps_tr <- sqrt(tj_stems_caps$est_ttl_capsules)
+
 fit_CPP <- lmer(CPP_tr ~ -1 + Entry + (1|Rep), data = tj_stems_caps)
 plot(fit_CPP)
 qqnorm(resid(fit_CPP))
 summary(fit_CPP)
 
+fit_TC <- lmer(ttl_caps_tr ~ -1 + Entry + (1|Rep), data = tj_stems_caps)
+plot(fit_TC)
+
 # Stems per plant. Use same sqrt transform as for capsules per plant
-tj_stems_caps$spp_tr <- (sqrt(tj_stems_caps$ttl_stems/tj_stems_caps$surv_4_27_13) - 1) / .5
+tj_stems_caps$spp_tr <- sqrt(tj_stems_caps$ttl_stems/tj_stems_caps$surv_4_27_13) 
 fit_SPP <- lmer(spp_tr ~ -1 + Entry + (1|Rep), data = tj_stems_caps)
 
 plot(fit_SPP)
@@ -87,7 +95,8 @@ bm_summary2 <- full_join(tj_biomass, dplyr::select(tj_stems_caps, Plot, entry = 
 
 # Linear models
 # Total weight (biomass per plot, which encorporates survival)
-tj_biomass$ttl_weight_2013_tr <- (sqrt(tj_biomass$ttl_weight_2013) - 1) / 0.5 #square root transform
+tj_biomass$ttl_weight_2013_tr <- sqrt(tj_biomass$ttl_weight_2013) #square root transform
+
 fit_biomass <- lmer(ttl_weight_2013_tr ~ -1 + Entry + (1|Rep), data=tj_biomass)
 plot(fit_biomass)
 qqnorm(resid(fit_biomass))
@@ -95,7 +104,7 @@ qqnorm(resid(fit_biomass))
 # Biomass per plant
 tj_biomass$BPP <- tj_biomass$ttl_weight_2013 / tj_biomass$survivorship_4_27_13 
 tj_biomass$BPP[tj_biomass$BPP == 0] <- NA #convert Zeros in BPP to NA
-tj_biomass$BPP_tr <- (sqrt(tj_biomass$BPP) - 1) / 0.5 #square root transform
+tj_biomass$BPP_tr <- sqrt(tj_biomass$BPP) #square root transform
 
 fit_bpp <- lmer(BPP_tr ~ -1 + Entry + (1|Rep), data=tj_biomass)
 plot(fit_bpp)
@@ -103,7 +112,12 @@ qqnorm(resid(fit_bpp))
 
 biomass_lsmeans <- as.data.frame(lsmeans(fit_bpp, "Entry")) %>%
   inner_join(dplyr::select(TvS_key, source, Entry)) %>%
-  mutate(btr_lsmean=((lsmean / 2) + 1)^2)
+  mutate(btr_lsmean=(lsmean^2))
+
+biomass_lsmeans <- as.data.frame(lsmeans(fit_bpp, "Entry"))
+
+biomass_lsmeans[c(2,3,5,6)] <- lapply(biomass_lsmeans[c(2,3,5,6)], function(x) x^2)
+                                   
 
 head(biomass_lsmeans)
 
@@ -112,9 +126,9 @@ ht_dia_data <- read.csv("data/TomJ_flax_avg_ht_dia_2013_RAW_DATA.csv", header = 
   mutate(Plot=as.factor(Plot), Rep=as.factor(Rep), Entry=as.factor(Entry)) 
 ht_dia_data <- head(ht_dia_data, -3) #delete 3 empty rows at end
 
-View(ht_dia_data %>%
-       group_by(Entry) %>%
-       summarise(n=n()))
+#View(ht_dia_data %>%
+#       group_by(Entry) %>%
+#       summarise(n=n()))
 
 ht_dia_data$Entry <- Plot_Entry_key$Entry #replace Plot-Entry matches with corrected version from stem/caps data.
 
@@ -131,10 +145,10 @@ dia_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, dia.1:dia.10)
 dia_data <- pivot_longer(dia_data, names_to = "Plant", values_to = "dia", dia.1:dia.10) 
 
 # How many plants in each plot? We will use this number to corroborate survivorship, in order to estimate per plant capsule and stem numbers. Diam and Height were reportedly measured a week before harvest in October. So they should be the most accurate? # Should also compare to April and Aug surv data. Could corroborate with caps data as well. 
-dia_plants_per_plot <- dia_data %>%
-  na.omit() %>%
-  group_by(Plot) %>%
-  summarise(num_plants_diam = n())
+#dia_plants_per_plot <- dia_data %>%
+#  na.omit() %>%
+#  group_by(Plot) %>%
+#  summarise(num_plants_diam = n())
 
 # Linear models
 fit_ht <- lmer(height ~ -1 + Entry + (1|Plot), data = ht_data)
@@ -147,7 +161,6 @@ plot(fit_dia)
 qqnorm(resid(fit_dia))
 
 #### Survival data ####
-# not sure how reliable this data is. 
 tj_surviv <- read.csv("data/TomJ_linum_lewisii_survivorship_flwr_full (ANALYZED IN FILE).csv", skip=1, header = T) %>%
   mutate(Plot=factor(Plot), Entry=factor(Entry), Rep=factor(Rep))
 # rename columns and keep only those we need
@@ -205,15 +218,29 @@ plot(fit_surviv2)
 #### Summarize ls-means of all traits ####
 # leaving out fit_surviv for now.
 tj_fit_list <- c(fit_CPS, fit_CPP, fit_SPP, fit_bpp, fit_ht, fit_dia)
-tj_trait_list <- c("Capsules_per_stem", "Capsules_per_plant", "Stems_per_plant", "Biomass_per_plant", "Plant_height", "Plant_diameter")
+tj_trait_list <- c("log_Capsules_per_stem", "sqr_Capsules_per_plant", "sqr_Stems_per_plant", "sqr_Biomass_per_plant",  "Plant_height", "Plant_diameter")
 tj_results <- list() #list to store means and confidence intervals
 tj_esp_list <- list() #list to store effect size plots
 
 # confidence intervals taken from the lsmeans() fxn here bc it is fast. will pronbably want to use confint() for final pub instead.
 for (i in 1:length(tj_fit_list) ){
+  
   fit <- tj_fit_list[[i]]
   
-  lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+  # Conditional statements to backtransform lsmeans, SEs, and CIs of appropriate traits
+  if( tj_trait_list[i] %in% c("sqr_Capsules_per_plat", "sqr_Stems_per_plant", "sqr_Biomass_per_plant") ){
+    lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+    lsmeans[c(2,3,5,6)] <- lapply(lsmeans[c(2,3,5,6)], function(x) x^2)
+    
+  } else if( tj_trait_list[i]=="log_Capsules_per_stem" ) {
+    lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+    lsmeans[c(2,3,5,6)] <- lapply(lsmeans[c(2,3,5,6)], function(x) exp(x))
+    
+  } else {
+    lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+  }
+  
+  
   #names(means)[2] <- "trait_value"
   
   # Create effect size plot
@@ -236,7 +263,7 @@ for (i in 1:length(tj_fit_list) ){
 names(tj_results) <- tj_trait_list
 head(tj_results)
 
-#### Trait correlations & PCA. Need to back transform population means. 
+#### Trait correlations & PCA. 
 library(vegan)
 library(ggvegan)
 
@@ -267,6 +294,8 @@ ordilabel(tj_trait_rda, dis="sites", cex=0.5)
 autoplot(tj_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic
 
 # Trait correlations. Need to back transform the lsmeans in order to use pearson correlations. sqr back transform = ((tr / 2) + 1)^2.
+
+
 
 #### PC transfer distance test for local adaptation ####
 library(climatedata)
