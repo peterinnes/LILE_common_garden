@@ -16,7 +16,6 @@ library(dplyr)
 library(magrittr)
 library(ggplot2)
 #library(interactions) #for interaction plots
-library(rgdal)
 library(raster)
 library(sp)
 library(rgdal)
@@ -153,9 +152,7 @@ plot(env_PC_scores$PC2, geo_clim_scaled_df$bio11)
 cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio18)
 
 
-
-
-# PCA of just climate vars. Thinking we would use these if we also want to include geographic variables as separate predictors in model selection.
+# PCA of just climate vars. Thinking we want use these if we also want to include geographic variables as separate predictors in model selection.
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
 clim_PC_scores <- data.frame(scores(my_clim_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
   tibble::rownames_to_column("source")
@@ -179,98 +176,87 @@ data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
   ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
 
-# clim var loadings/scores
+# clim var loadings
 clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)) %>%
   tibble::rownames_to_column("var") %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
 
-# PCA of just temperature vars (bio1-11)
-my_temp_rda <- rda(geo_clim_df[6:16], scale = T)
 
-autoplot(my_temp_rda, rows = TRUE, geom = "text", legend = "none")
-
-data.frame(summary(eigenvals(my_temp_rda)))[2,1:11] %>% 
-  pivot_longer(1:11, names_to = "PC", values_to = "Proportion_Explained") %>%
-  mutate(PC=factor(PC, levels = PC)) %>%
-  # Plot proportion explained
-  ggplot(aes(x=PC, y=Proportion_Explained)) + 
-  geom_col()
-
-temp_PC_scores <- data.frame(scores(my_temp_rda, choices=1:3, display = "sites", scaling=0)) %>% #scaling=2, i.e. scale by species, is the default, is what the summary() reports
-  tibble::rownames_to_column("source") %>%
-  rename(temp1=PC1, temp2=PC2, temp3=PC3)
-
-# PCA of just precip variables (bio12-19)
-my_precip_rda <- rda(geo_clim_df[17:24])
-
-autoplot(my_precip_rda, rows = TRUE, geom = "text", legend = "none")
-
-data.frame(summary(eigenvals(my_precip_rda)))[2,1:8] %>% 
-  pivot_longer(1:8, names_to = "PC", values_to = "Proportion_Explained") %>%
-  mutate(PC=factor(PC, levels = PC)) %>%
-  # Plot proportion explained
-  ggplot(aes(x=PC, y=Proportion_Explained)) + 
-  geom_col()
-
-precip_PC_scores <- data.frame(scores(my_precip_rda, choices=1, display = "sites", scaling=0)) %>%
-  tibble::rownames_to_column("source") %>%
-  rename(precip=PC1)
-
-
-#' #### Model selection of traits vs env PCs ####
+#' #### Model selection of traits vs env/climate PCs ####
 
 traits <- c("sd_wt_50_ct", "good_fill", "num_of_stems", "sqr_fruits", "sqr_bds_flow", "sqr_forks", "log_diam_stem", "diam_caps", "log_EST_YIELD")
 
 datasets <- list(sd_wt_data, ff_data, stems, stem_data, stem_data, stem_data, stem_data, stem_data, yield_df)
 
 #List of each predictor combination to include in our model selection. Add interactions of geog/clim?
-fixefs <- c('Lat_s + Long_s + Elev_m_s + temp1 + temp2 + precip',
-            'Lat_s + Long_s + Elev_m_s + temp1 + precip',
-            'Lat_s + Long_s + Elev_m_s + temp2 + precip',
-            'Lat_s + Long_s + Elev_m_s + temp1',
-            'Lat_s + Long_s + Elev_m_s + temp2',
-            'Lat_s + Long_s + Elev_m_s + precip',
-            'Lat_s + Long_s + temp1',
-            'Lat_s + Elev_m_s + temp1',
-            'Long_s + Elev_m_s + temp1',
+fixefs <- c('Lat + Long + Elev_m + PC1 + PC2',
+            'Lat + Long + Elev_m + PC1',
+            'Lat + Long + Elev_m + PC2',
             
-            'Lat_s + Long_s + precip',
-            'Lat_s + Elev_m_s + precip',
-            'Long_s + Elev_m_s + precip',
+            'Lat + Long + PC1 + PC2',
+            'Lat + Elev_m + PC1 + PC2',
+            'Long + Elev_m + PC1 + PC2',
             
-            'Lat_s + temp1 + precip',
-            'Long_s + temp1 + precip',
-            'Elev_m_s + temp1 + precip',
+            'Lat + Long + Elev_m',
             
-            'Lat_s + Long_s + temp2',
-            'Lat_s + Elev_m_s + temp2',
-            'Long_s + Elev_m_s + temp2',
+            'Lat + Long + PC1',
+            'Lat + Elev_m + PC1',
+            'Long + Elev_m + PC1',
             
-            'Lat_s + temp2 + precip',
-            'Long_s + temp2 + precip',
-            'Elev_m_s + temp2 + precip',
+            'Lat + Long + PC2',
+            'Lat + Elev_m + PC2',
+            'Long + Elev_m + PC2',
             
-            'Lat_s + Long_s + Elev_m_s',
+            'Lat + PC1 + PC2',
+            'Long + PC1 + PC2',
+            'Elev_m + PC1 + PC2',
             
-            'Lat_s*Long_s',
-            'Lat_s*Elev_m_s',
-            'Long_s*Elev_m_s',
+            'Lat + PC1',
+            'Long + PC1',
+            'Elev_m + PC1',
             
-            'Lat_s + Long_s',
-            'Lat_s + Elev_m_s',
-            'Long_s + Elev_m_s',
+            'Lat + PC2',
+            'Long + PC2',
+            'Elev_m + PC2',
             
-            'Lat_s',
-            'Long_s',
-            'Elev_m_s',
-            'temp1*precip',
-            'temp1 + precip',
-            'temp1',
-            'precip',
-            'temp2*precip',
-            'temp2 + precip',
-            'temp2'
+            'Lat*Long',
+            'Lat*Elev_m',
+            'Long*Elev_m',
+            
+            'Lat + Long',
+            'Lat + Elev_m',
+            'Long + Elev_m',
+            
+            'PC1*PC2',
+            'PC1 + PC2',
+            
+            'Lat',
+            'Long',
+            'Elev_m',
+            
+            'PC1',
+            'PC2',
+            
+            'bio01',
+            'bio02',
+            'bio03',
+            'bio04',
+            'bio05',
+            'bio06',
+            'bio07',
+            'bio08',
+            'bio09',
+            'bio10',
+            'bio11',
+            'bio12',
+            'bio13',
+            'bio14',
+            'bio15',
+            'bio16',
+            'bio17',
+            'bio18',
+            'bio19'
             
             )
 
@@ -278,9 +264,8 @@ results <- list()
 for ( i in 1:length(traits) ){ #loop through each trait
   trait <- traits[i]
   data <- datasets[[i]] %>%
-    inner_join(temp_PC_scores) %>%
-    inner_join(precip_PC_scores) %>%
-    inner_join(dplyr::select(geo_data, source, Lat_s, Long_s, Elev_m_s))
+    inner_join(clim_PC_scores) %>%
+    inner_join(geo_clim_scaled_df)
   
   # Different random effects structure for 'stem_data' traits that have repeated measures from the same plants
   if( traits[i] %in% c("sqr_fruits", "sqr_bds_flow", "sqr_forks", "log_diam_stem", "diam_caps")){
@@ -317,13 +302,13 @@ for ( i in 1:length(results)){
 
 # make_pred_df is a function that takes a LMM as its argument and returns a data frame with estimated group means (intercepts). I use it to find the population trait means of trait~latitude models, which have population as a random effect.
 make_pred_df <- function(fit){
-  pred_df <- data.frame(coef(fit)$population,
-                        se.ranef(fit)$population[,1])
+  pred_df <- data.frame(coef(fit)$source,
+                        se.ranef(fit)$source[,1])
   names(pred_df) <- c("pop_b0", "b1", "pop_b0_se")
   pred_df <- pred_df %>%
-    tibble::rownames_to_column("population") %>%
-    inner_join(dplyr::select(env_data, population, Lat))
-  # Calculate means (intercepts?) for each population 
+    tibble::rownames_to_column("source") %>%
+    inner_join(dplyr::select(env_data, source, Lat))
+  # Calculate means (intercepts?) for each source 
   pred_df$pop_b0 <- pred_df$pop_b0 + pred_df$b1*pred_df$Lat
   return(pred_df)
 }

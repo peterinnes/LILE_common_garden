@@ -77,7 +77,7 @@ fit_num_stems <- lmer(num_of_stems ~ -1 + population + (1|block) + (1|population
 ns_fit_summary <- summary(fit_num_stems)
 
 #' 4. Fruit (capsules) per stem mod. square root transformed. For this trait and subsequent per-stem traits, we need an additional model term to account for multiple measurements taken from same plant
-stem_data$sqr_fruits <- (sqrt(stem_data$fruits) - 1) / .5 #square root transform helps somewhat. 
+stem_data$sqr_fruits <- sqrt(stem_data$fruits) #square root transform helps somewhat. 
 stem_data$log_fruits <- log(ifelse(stem_data$fruits==0,0.1,stem_data$fruits)) #log transform makes it worse.
 
 fit_sqr_fruits <- lmer(sqr_fruits ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) 
@@ -89,7 +89,7 @@ qqnorm(resid(fit_sqr_fruits))
 fit_fruits_nb <- glmmTMB(fruits ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") 
 
 #' 5. Buds/flowers per stem model. square root transform.
-stem_data$sqr_bds_flow <- (sqrt(stem_data$bds_flow) - 1) / .5
+stem_data$sqr_bds_flow <- sqrt(stem_data$bds_flow)
 fit_sqr_bf <- lmer(sqr_bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
 plot(fit_sqr_bf)
 qqnorm(resid(fit_sqr_bf))
@@ -99,7 +99,7 @@ fit_bf_nb <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|popu
 fit_bf_p <- glmmTMB(bds_flow ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data, family = "poisson")
   
 #' 6. Forks per stem. square root transform.
-stem_data$sqr_forks <- (sqrt(stem_data$forks) - 1) / .5
+stem_data$sqr_forks <- sqrt(stem_data$forks)
 fit_sqr_forks <- lmer(sqr_forks ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. It explains ~0 variance, leaving this term out. 
 
 fit_forks_nb <- glmmTMB(forks ~ (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data, family = "nbinom2") #trying negative binom with glmmTMB. Doesn't look great. will stick with square root transform. 
@@ -128,7 +128,7 @@ qqnorm(resid(fit_log_fecundity))
 
 #' 11. Capsules + Buds/Flowers per plant. square root transform
 stem_data$caps_bds_flows <- stem_data$fruits + stem_data$bds_flow
-stem_data$sqr_caps_bds_flows <- (sqrt(stem_data$caps_bds_flows) - 1) / .5
+stem_data$sqr_caps_bds_flows <- sqrt(stem_data$caps_bds_flows)
 fit_sqr_cbf <- lmer(sqr_caps_bds_flows ~ -1 + population + (1|block) + (1|population:block:plant), data=stem_data)
 
 summary(fit_sqr_cbf)
@@ -250,7 +250,7 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
-#### Summarize ls-means of all traits ####
+#### Summarize ls-means of all traits. 4.30 need to transform variables back to original scale ####
 fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_sqr_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
 trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "sqr_Capsules_per_stem", "sqr_Buds_flowers_per_stem", "sqr_Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
 results <- list() #list to store means and confidence intervals
