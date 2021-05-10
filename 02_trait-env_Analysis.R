@@ -96,21 +96,6 @@ dev.off()
 
 autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
-# plot using ggrepel and ggplot
-pops <- fortify(my_env_rda, display='sites')
-clims <- fortify(my_env_rda, display='species')
-env_pca_plot <- ggplot() +
-  geom_point(data=pops, aes(x = PC1, y = PC2), shape=1, size=2, alpha=0.75) +
-  #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
-  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=3) +
-  geom_segment(data=clims, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", alpha=0.5, arrow=arrow(length=unit(0.01,"npc"))) +
-  geom_text(data=clims, 
-            aes(x=PC1,y=PC2,label=Label,
-                hjust="inward",vjust=0.75*(1-sign(PC2))), 
-            color="red", size=3, alpha=0.5) +
-  theme_minimal()
-
 # Plot of proportion variance explained
 data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
@@ -161,13 +146,20 @@ my_clim_rda$CA$u[,1:2] #alternate way to access loadings of sources i.e. 'sites'
 summary(my_clim_rda)
 summary(eigenvals(my_clim_rda))
 
-biplot(my_clim_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
-ordilabel(my_clim_rda, dis="sites", cex=0.5)
-autoplot(my_clim_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
+# plot using ggrepel and ggplot
+pops <- fortify(my_clim_rda, display='sites')
+clims <- fortify(my_clim_rda, display='species')
+clim_pca_plot <- ggplot() +
+  geom_point(data=pops, aes(x = PC1, y = PC2), shape=16, size=2, alpha=0.75) +
+  #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
+  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=3) +
+  geom_segment(data=clims, aes(x=0, xend=PC1, y=0, yend=PC2), 
+               color="red", alpha=0.5, arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text(data=clims, 
+            aes(x=PC1,y=PC2,label=Label,
+                hjust="inward",vjust=0.75*(1-sign(PC2))), 
+            color="red", size=3, alpha=0.5) +
+  theme_minimal()
 
 data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>% 
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%

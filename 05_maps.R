@@ -32,6 +32,8 @@ coords_sp <- SpatialPointsDataFrame(coords = coords[,c(1,2)], data = coords,
 us <- getData("GADM", country="USA", level=1) #get US States shapefile
 iwstates <- c("Colorado", "Utah", "Idaho", "Nevada") #list of states I want to plot
 
+elevation.sub <- raster("data/lile_elevation.gri")
+
 # Subset US shapefile by desired states
 state.sub <- us[as.character(us@data$NAME_1) %in% iwstates, ]
 
@@ -41,6 +43,8 @@ elev_model <- get_elev_raster(state.sub, z = 9) #zoom=9
 # Crop and mask the elevation raster to our subset of sates
 elevation.sub <- crop(elev_model, extent(state.sub))
 elevation.sub <- mask(elevation.sub, state.sub)
+
+writeRaster(elevation.sub, "data/lile_elevation.raster")
 
 # basic map
 plot(elevation.sub)
@@ -54,7 +58,7 @@ LILE_map_2.0 <- tm_shape(elevation.sub) +
   tm_borders() +
   tm_shape(coords_sp) +
   tm_symbols(shape=1, size = 0.25, col = "black") +
-  tm_layout(frame = F)
+  tm_layout(frame = F, legend.title.size = 2, legend.text.size = 1.5)
 
 # basic map without elevation raster
 states <- sf::st_as_sf(map('state', c('colorado','idaho','utah', 'nevada'), plot = FALSE, fill = TRUE))
@@ -65,6 +69,6 @@ LILE_map <- ggplot() +
   theme_classic()
 LILE_map
 
-png("LILE_map_2.0.png", width=8, height=7, res=300, units="in")
+png("plots/LILE_map_2.0.png", width=8, height=7, res=300, units="in")
 LILE_map_2.0
 dev.off()
