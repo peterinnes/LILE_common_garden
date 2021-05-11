@@ -144,9 +144,14 @@ ht_dia_data <- ht_dia_data %>%
 ht_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, ht_pl1, ht_pl2, ht_pl3, ht_pl4, ht_pl5)
 ht_data <- pivot_longer(ht_data, names_to = "Plant", values_to = "height", ht_pl1:ht_pl5) 
 
+# Summarize plot averages
+ht_plot_means <- ht_data %>% group_by(Plot, Entry) %>% na.omit() %>% summarise(mean=mean(height))
+
 dia_data <- ht_dia_data %>% dplyr::select(Plot, Rep, Entry, dia.1:dia.10)
 dia_data <- pivot_longer(dia_data, names_to = "Plant", values_to = "dia", dia.1:dia.10) 
 
+dia_plot_means <- dia_data %>% group_by(Plot, Entry) %>% na.omit() %>% summarise(mean=mean(dia))
+View(dia_plot_means)
 # How many plants in each plot? We will use this number to corroborate survivorship, in order to estimate per plant capsule and stem numbers. Diam and Height were reportedly measured a week before harvest in October. So they should be the most accurate? # Should also compare to April and Aug surv data. Could corroborate with caps data as well. 
 dia_plants_per_plot <- dia_data %>%
   na.omit() %>%
@@ -178,7 +183,7 @@ tj_surviv <- head(tj_surviv, -1) #delete last row which had totals
 
 tj_surviv$Entry <- Plot_Entry_key$Entry #replace Plot-Entry matches with corrected version from stem/caps data.
 
-# join w/ source/site info, remove mistaken Appar sources
+# join w/ source/population info, remove mistaken Appar sources
 tj_surviv <- tj_surviv %>%
   inner_join(dplyr::select(TvS_key, Entry, source) %>% na.omit()) %>%
   relocate(source, .after = Entry) %>%
@@ -238,28 +243,29 @@ for (i in 1:length(tj_fit_list) ){
   # Conditional statements to back-transform lsmeans, SEs, and CIs of appropriate traits for plotting
   # Square root transformed traits
   if( tj_trait_list[i] %in% c("Capsules_per_plot", "Stems_per_plot", "Biomass_per_plot") ){
-    plot_lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+    plot_lsmeans <- lsmeans
     plot_lsmeans[c(2,3,5,6)] <- lapply(plot_lsmeans[c(2,3,5,6)], function(x) x^2)
   
-  # Log transformed, so esponentiate 
+  # Log transformed, so exponentiate 
   } else if( tj_trait_list[i]=="Capsules_per_stem" ) {
-    plot_lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+    plot_lsmeans <- lsmeans
     plot_lsmeans[c(2,3,5,6)] <- lapply(plot_lsmeans[c(2,3,5,6)], function(x) exp(x))
   
   # Untransformed traits
   } else {
-    plot_lsmeans <- as.data.frame(lsmeans(fit, "Entry"))
+    plot_lsmeans <- lsmeans
   }
   plot_lsmeans <- plot_lsmeans %>% #join with 'source' ID from Stan
     inner_join(dplyr::select(TvS_key, Entry, source)) %>%
+    inner_join(dplyr::select(env_data, source, population)) %>%
     relocate(source, .after = Entry)
   # Create effect size plot
-  esp <- ggplot(data=plot_lsmeans, aes(x=lsmean, y=reorder(source, lsmean), xmin=lower.CL, xmax=upper.CL)) +
+  esp <- ggplot(data=plot_lsmeans, aes(x=lsmean, y=reorder(population, lsmean), xmin=lower.CL, xmax=upper.CL)) +
     geom_point() +
     geom_errorbar() +
     ylab("Population") +
     xlab(tj_trait_list[[i]]) +
-    theme(axis.text.y = element_text(size = 6))
+    theme(axis.text.y = element_text(size = 10)) 
   
   tj_esp_list[[i]] <- esp #Store plot
   
@@ -274,8 +280,8 @@ names(tj_results) <- tj_trait_list
 head(tj_results, 7L)
 
 tj_esp_grid <- cowplot::plot_grid(plotlist = tj_esp_list, ncol = 3)
-png("plots/tj_traits_esp.png", width=12, height=9, res=300, units="in")
-x11()
+png("plots/milville_traits_esp.png", width=12, height=9, res=300, units="in")
+#x11()
 tj_esp_grid
 dev.off()
 
@@ -308,6 +314,31 @@ ordilabel(tj_trait_rda, dis="sites", cex=0.5)
 # ggvegan version
 autoplot(tj_trait_rda, arrows = TRUE, geom = "text", legend = "none") #basic
 
+# Full RDA (all env predictors and all traits) of population-level data
+fullRDA_df <- inner_join(tj_pop_trait_means, geo_clim_df) %>%
+  dplyr::select(-c(Entry,population))
+
+dim(fullRDA_df)
+
+tj_sources <- fullRDA_df[,1]
+rownames(fullRDA_df) <- tj_sources
+fullRDA_df <- fullRDA_df[,-1]
+RDA_traits <- fullRDA_df[1:6]
+RDA_preds <- fullRDA_df[7:28]
+
+tj_full_rda <- rda(RDA_traits ~ Lat + Long + Elev_m + bio01 + bio02 + bio03 + bio04 + bio05 + bio06 + bio07 + bio08 + bio09 + bio10 + bio11 + bio12 + bio13 + bio14 + bio15 + bio16 + bio17 + bio18 + bio19, data=RDA_preds, scale = T)
+autoplot(tj_full_rda, arrows=FALSE, geom="text", legend= "none",scaling=1)
+
+# Marginal effects of the terms (each marginal term analysed in a model with all other variables). 
+anova(tj_full_rda, by="margin", permutations=1000)
+
+# Variance partition
+RDA_geog <- RDA_preds[1:3]
+RDA_clim <- RDA_preds[4:22]
+RsquareAdj(tj_full_rda)
+RSQ
+varpart(RDA_traits, RDA_geog, RDA_clim, scale = T, permutations = 1000)
+showvarparts(2)
 
 #### Trait correlations. Use scaled/centered population means? ####
 

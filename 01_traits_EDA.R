@@ -42,7 +42,7 @@ sd_wt_data <- read.csv("data/cleaned_LILE_yield_data_2013_seed_wt.csv", header =
   left_join(dplyr::select(env_data, source, population))
 
 sd_wt_data <- sd_wt_data %>% 
-  dplyr::select(!c('num_seeds','notes')) %>%
+  dplyr::select(!c('num_seeds','notes')) %>% #don't need these columns anymore
   filter(!source %in% c(2,5,22,32,38)) # exclude these sources bc they were found to be mostly 'Appar', which is already represented (source 41). Source 22 should be excluded as well—6 of  8 source 22 plants are Appar.
 
 write.csv(sd_wt_data, file = "data/sd_wt_data.csv", row.names = FALSE)
@@ -83,9 +83,9 @@ yield_df <- full_join(a,b)
 yield_df <- full_join(yield_df,c)
 yield_df <- full_join(yield_df,d)
 head(yield_df)
-
+dim(yield_df)
 #' Next, impute missing seed weight values so that we can estimate yield for plants that have trait data for everything except seed weight: use the mean seed weight from all other plots of its population.
-for ( i in 1:281 ){
+for ( i in 1:281 ){ #last 100 entries in yield df have missing data so we skip them
   pop <- yield_df$population[i]
   pop_mn <- yield_df %>% filter(population==pop) %>% 
     dplyr::select(source,row,plot,sd_wt_50_ct) %>%
@@ -107,6 +107,7 @@ yield_df <- yield_df %>%
          * (sd_wt_50_ct/50)) %>%
   group_by(population,block) %>%
   arrange(as.character(population))
+
 write.csv(yield_df,file="data/yield_df.csv", row.names = FALSE)
 
 
@@ -468,10 +469,9 @@ yield_df %>%
   geom_line(data=gamma_df, mapping=aes(x=x,y=y), col="red") +
   facet_wrap(facets = ~ population)
 
-#' 10. Estimated seeds per plant — Fruit fill * Fruits per stem * Stems per plant
-yield_df$EST_seeds_per_plant <- 
+#' 10. Estimated fecundity (seeds per plant) — Fruit fill * Fruits per stem * Stems per plant
+yield_df$EST_fecundity <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
 
-#' 11. Hypothetical fecundity — Total combined capsules, buds, and flowers
 
 #' EDA miscellaneous scraps
 # Data summaries

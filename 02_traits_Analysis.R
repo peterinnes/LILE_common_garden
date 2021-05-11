@@ -27,7 +27,7 @@ library(arm) #for se.ranef()
 #### Read in the data. For trait data, we'll use the cleaned/filtered data frames created and written to files in the traits_EDA.R script ####
 #' Collection/environmental data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
-  mutate(source=as.factor(source), population=as.factor(population)) #scale predictors
+  mutate(source=as.factor(source), population=as.factor(population))
 
 #' Seed weight data
 sd_wt_data <- read.csv("data/sd_wt_data.csv", header = TRUE) %>%
@@ -107,7 +107,7 @@ fit_forks_nb <- glmmTMB(forks ~ (1|population) + (1|population:block) + (1|popul
 #' 7. Stem diameter
 stem_data$log_diam_stem <- log(stem_data$diam_stem) #log transform
 fit_log_stemd <- lmer(log_diam_stem ~ -1 + population + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data) #log transform to account for right skew
-summary(fit_log_stemd)
+plot(fit_log_stemd)
 
 #' 8. Capsule diameter
 fit_capsd <- lmer(diam_caps ~ -1 + population + (1|population:block) + (1|population:block:plant), data=stem_data) #singular fit with (1|block) term. Leaving this term out fixes issue.
@@ -122,22 +122,13 @@ ly_fit_summary <- summary(fit_log_yield)
 yield_df$EST_fecundity <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
 yield_df$log_EST_fecundity <- log(yield_df$EST_fecundity)
 fit_log_fecundity <- lmer(log_EST_fecundity ~ -1 + population + (1|block) + (1|population:block), data=yield_df)
-summary(fit_log_fecundity) #a lot of variation, mostly at the individual plant level (residual)
+summary(fit_log_fecundity) # a lot of variation, mostly at the individual plant level (residual)
 plot(fit_log_fecundity)
 qqnorm(resid(fit_log_fecundity))
 
-#' 11. Capsules + Buds/Flowers per plant. square root transform
-stem_data$caps_bds_flows <- stem_data$fruits + stem_data$bds_flow
-stem_data$sqr_caps_bds_flows <- sqrt(stem_data$caps_bds_flows)
-fit_sqr_cbf <- lmer(sqr_caps_bds_flows ~ -1 + population + (1|block) + (1|population:block:plant), data=stem_data)
-
-summary(fit_sqr_cbf)
-plot(fit_sqr_cbf)
-qqnorm(resid(fit_sqr_cbf))
-
 #' #### Model DIAGNOSTICS ####
-fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
-trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "Capsules_per_stem", "Buds_flowers_per_stem", "Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
+fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_sqr_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
+trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "sqr_Capsules_per_stem", "sqr_Buds_flowers_per_stem", "sqr_Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
 fvr_list <- list()
 qqp_list <- list()
 hist_list <- list()
@@ -169,18 +160,17 @@ fvr_grid <- cowplot::plot_grid(plotlist = fvr_list, ncol = 3)
 qqp_grid <- cowplot::plot_grid(plotlist = qqp_list, ncol = 3)
 hist_grid <- cowplot::plot_grid(plotlist = hist_list, ncol = 3)
 
-png("plots/rvf_plots.png", width=11, height=9, res=300, units="in")
+png("plots/ephraim_traits_RvF.png", width=11, height=9, res=300, units="in")
 fvr_grid
 dev.off()
 
-png("plots/qq_plots.png", width=11, height=9, res=300, units="in")
+png("plots/ephraim_traits_qqplots.png", width=11, height=9, res=300, units="in")
 qqp_grid
 dev.off()
 
-png("plots/hist_resids.png", width=11, height=9, res=300, units="in")
+png("plots/ephraim_traits_hist_resids.png", width=11, height=9, res=300, units="in")
 hist_grid
 dev.off()
-
 
 
 #' misc model diagnostics
@@ -250,58 +240,74 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
-#### Summarize ls-means of all traits. 4.30 need to transform variables back to original scale ####
+#### Summarize ls-means of all traits. 4.30 need to transform variables back to original scale. log: stem diam, est yield, est fecundity. sqr: caps per stem, buds/flowers per stem, forks per stem ####
 fit_list <- c(fit_sd_wt, fit_ff, fit_num_stems, fit_sqr_fruits, fit_sqr_bf, fit_sqr_forks, fit_log_stemd, fit_capsd, fit_log_yield, fit_log_fecundity)
-trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "sqr_Capsules_per_stem", "sqr_Buds_flowers_per_stem", "sqr_Forks_per_stem", "log_Stem_dia", "Capsule_dia", "log_Est_yield", "log_Est_fecundity")
+trait_list <- c("Seed_weight", "Capsule_fill", "Stems_per_plant", "Capsules_per_stem", "Buds/flowers_per_stem", "Forks_per_stem", "Stem_diam", "Capsule_diam", "Est_yield", "Est_fecundity")
 results <- list() #list to store means and confidence intervals
 esp_list <- list() #list to store effect size plots
+emm_options(pbkrtest.limit = 5565) #need to increase mem usage limit. could take a while
 for (i in 1:length(fit_list) ){
   fit <- fit_list[[i]]
+  lsmeans <- as.data.frame(lsmeans(fit, "population"))
   
-  means <- as.data.frame(fixef(fit)) %>% #Get ls-means
-    tibble::rownames_to_column(c("population"))
-  names(means)[2] <- "trait_value"
-  
-  ci <- as.data.frame(confint(fit)) %>% #Get confidence intervals
-    tibble::rownames_to_column(c("population"))
-    names(ci)[2:3] <- c("lwr", "upr")
+  # Conditional statements to back-transform lsmeans, SEs, and CIs of appropriate traits for PLOTTING ONLY
+  # Square root transformed traits
+  if( trait_list[i] %in% c("Capsules_per_stem", "Buds/flowers_per_stem", "Forks_per_stem") ){
+    plot_lsmeans <- lsmeans
+    plot_lsmeans[c(2,3,5,6)] <- lapply(plot_lsmeans[c(2,3,5,6)], function(x) x^2)
     
-  # join means and confidence intervals
-  means_ci <- inner_join(means, ci)
-  means_ci$population <- gsub("population", "", means_ci$population)
-  means_ci <- dplyr::select(env_data, population, source, site) %>% inner_join(means_ci)
+    # Log transformed, so exponentiate 
+  } else if( trait_list[i] %in% c("Stem_diam", "Est_yield", "Est_fecundity") ) {
+    plot_lsmeans <- lsmeans
+    plot_lsmeans[c(2,3,5,6)] <- lapply(plot_lsmeans[c(2,3,5,6)], function(x) exp(x))
+    
+    # Untransformed traits (seed weight, capsule fill, stems per plant, capsule diam)
+  } else {
+    plot_lsmeans <- lsmeans
+  }
   
   # Create effect size plot
-  esp <- ggplot(data=means_ci, aes(x=trait_value, y=reorder(site, trait_value), xmin=lwr, xmax=upr)) +
+  esp <- ggplot(data=plot_lsmeans, aes(x=lsmean, y=reorder(population, lsmean), xmin=lower.CL, xmax=upper.CL)) +
     geom_point() +
     geom_errorbar() +
     ylab("Population") +
     xlab(trait_list[[i]]) +
-    theme(axis.text.y = element_text(size = 6))
-  
+    theme(axis.text.y = element_text(size = 10))
+  esp
   esp_list[[i]] <- esp #Store plot
   
-  names(means_ci)[4] <- trait_list[[i]] #Change to actual trait name before storing in results
-  results[[i]] <- means_ci #store means and confidence intervals
+  names(lsmeans)[2] <- trait_list[[i]] #Change to actual trait name before storing in results
+  results[[i]] <- lsmeans #store means and confidence intervals
   
   # sort by descending trait value to make more readable
-  means_ci <- means_ci %>% arrange(-means_ci[4]) 
+  lsmeans <- lsmeans %>% arrange(-lsmeans[2]) 
   # write to csv for summary to send to Scott J et al
   #write.csv(means_ci, file=paste0("results_summaries/", names(means_ci)[4], "_summary.csv"))
 }
 
 # Join all the effect size plots together
+library(patchwork)
+layout <- "
+ABCDE
+FGHIJ
+"
+esp_patchwork <- esp_list[[1]] + esp_list[[2]] + esp_list[[3]] + esp_list[[4]] + esp_list[[5]] + esp_list[[6]] + esp_list[[7]] + esp_list[[8]] + esp_list[[9]] + esp_list[[10]] +
+  plot_layout(design = layout)
+
 esp_grid <- cowplot::plot_grid(plotlist = esp_list, ncol = 3)
-png("plots/traits_esp.png", width=12, height=9, res=300, units="in")
-esp_grid
+png("plots/ephraim_traits_esp.png", width=12, height=9, res=300, units="in")
+esp_patchwork
 dev.off()
+
+
+
 
 #### Trait pairwise pearson correlations ####
 # performed with population trait means from above
 # DO I NEED TO BACK TRANSFORM POPULATION MEANS before calculating the correlations?
 # Gather just the trait ls-means together (no conf intervals)
 #pop_trait_means <- data.frame(population=results[[1]]$population)
-pop_trait_means <- data.frame(site=results[[1]]$site)
+pop_trait_means <- data.frame(population=results[[1]]$population)
 for ( i in 1:length(results) ){
   pop_trait_means <- cbind(pop_trait_means, results[[i]][4]) #add trait means to growing df
 }
@@ -311,7 +317,7 @@ library(ggcorrplot)
 
 trait_corr_df <- pop_trait_means %>%
   mutate(ratio_bf_to_caps=sqr_Buds_flowers_per_stem/sqr_Capsules_per_stem) %>%
-  filter(!site=='Appar') #exclude Appar bc different species
+  filter(!population=='Appar') #exclude Appar bc different species
 
 corr_mat <- round(cor(trait_corr_df[,2:11], method=c("pearson"), use = "complete.obs"),4)
 p_mat <- cor_pmat(trait_corr_df[,2:11])
@@ -345,8 +351,8 @@ coord_fixed()
 library(vegan)
 library(ggvegan)
 # with source as rownames/labels
-pop_trait_means <- inner_join(pop_trait_means, dplyr::select(env_data, source, site)) %>%
-  relocate(source, .before = site)
+pop_trait_means <- inner_join(pop_trait_means, dplyr::select(env_data, source, population)) %>%
+  relocate(source, .before = population)
 
 temp <- pop_trait_means[,-1]
 rownames(temp) <- temp[,1]

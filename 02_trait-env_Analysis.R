@@ -44,18 +44,18 @@ BioClim_codes <- read.csv("BioClim_codes.csv") #this file matches the vague bioc
 chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat,
-                     row.names = geo_data$population) %>% na.omit()
+                     row.names = geo_data$source) %>% na.omit()
 
 points <- SpatialPoints(coords, proj4string = chelsa@crs)
 
 values <- raster::extract(chelsa,points) #previously raster::extract(r,points)
 
 clim_df <- cbind.data.frame(coordinates(points),values) %>%
-  tibble::rownames_to_column("population")
+  tibble::rownames_to_column("source")
 colnames(clim_df)[4:22] <- lapply(colnames(clim_df)[4:22], gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
 
 geo_clim_df <- inner_join(geo_data[1:5], clim_df) 
-rownames(geo_clim_df) <- geo_clim_df[,1] #set source number to the rownames, otherwise we lose these labels in the PCA below.
+rownames(geo_clim_df) <- geo_clim_df[,2] #set site to the rownames, otherwise we lose these labels in the PCA below.
 head(geo_clim_df)
 
 geo_clim_scaled_df <- geo_clim_df
@@ -73,6 +73,7 @@ cor.test(geo_data$Long, geo_data$Lat)
 # PCA of environmental variables
 my_env_rda <- rda(geo_clim_df[3:24], scale = T) #PCA of scaled geo and clim vars (skip column 1 and 2 which have source/population ID)
 summary(my_env_rda)
+summary(eigenvals(my_env_rda))[2,1:12] #percent variance explained
 # Get site (source/population) PC scores for use in trait-env model selection
 env_PC_scores <- data.frame(scores(my_env_rda, choices=1:3, display = "sites", scaling=0)) %>%
   tibble::rownames_to_column("source")
@@ -82,17 +83,25 @@ my_env_pca <- prcomp(geo_clim_df[3:24], scale = T)
 scores(my_env_pca)
 biplot(my_env_pca)
 
+# Plot
+pops <- fortify(my_env_rda, display='sites')
+envs <- fortify(my_env_rda, display='species')
+env_pca_plot <- ggplot() +
+  geom_point(data=pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
+  #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
+  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5) +
+  geom_segment(data=envs, aes(x=0, xend=PC1, y=0, yend=PC2), 
+               color="red", alpha=0.75, arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text_repel(data=envs, 
+            aes(x=PC1,y=PC2,label=Label), 
+            color="red", size=4) +
+  labs(x='PC1 (44.5%)', y='PC2 (19.1%)', size=4) +
+  theme_minimal()
 
-biplot(my_env_rda,
-       display = c("sites", 
-                   "species"),
-       type = c("text",
-                "points"))
-ordilabel(my_env_rda, dis="sites", cex=0.5)
-
-png("plots/env_pca.png", width=9, height=9, res=300, units="in")
-my_env_rda
+png("plots/env_pca.png", width=8, height=6, res=300, units="in")
+env_pca_plot
 dev.off()
+
 
 autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
@@ -150,16 +159,21 @@ summary(eigenvals(my_clim_rda))
 pops <- fortify(my_clim_rda, display='sites')
 clims <- fortify(my_clim_rda, display='species')
 clim_pca_plot <- ggplot() +
-  geom_point(data=pops, aes(x = PC1, y = PC2), shape=16, size=2, alpha=0.75) +
+  geom_point(data=pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
   #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
-  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=3) +
+  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5) +
   geom_segment(data=clims, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", alpha=0.5, arrow=arrow(length=unit(0.01,"npc"))) +
-  geom_text(data=clims, 
-            aes(x=PC1,y=PC2,label=Label,
-                hjust="inward",vjust=0.75*(1-sign(PC2))), 
-            color="red", size=3, alpha=0.5) +
+               color="red", alpha=0.75, arrow=arrow(length=unit(0.01,"npc"))) +
+  geom_text_repel(data=clims, 
+                  aes(x=PC1,y=PC2,label=Label), 
+                  color="red", size=4) +
+  labs(x='PC1 (49%)', y='PC2 (18.6%)', size=4) +
   theme_minimal()
+clim_pca_plot
+
+png("plots/clim_pca.png", width=8, height=6, res=300, units="in")
+clim_pca_plot
+dev.off()
 
 data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>% 
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
@@ -167,6 +181,14 @@ data.frame(summary(eigenvals(my_clim_rda)))[2,1:12] %>%
   # Plot proportion explained
   ggplot(aes(x=PC, y=Proportion_Explained)) + 
   geom_col()
+
+biplot(my_clim_rda,
+       display = c("sites", 
+                   "species"),
+       type = c("text",
+                "points"))
+ordilabel(my_clim_rda, dis="sites", cex=0.5)
+autoplot(my_clim_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
 # clim var loadings
 clim_PC_loadings <- data.frame(scores(my_clim_rda, choices=1:2, display = "species", scaling = 1)) %>%
@@ -330,7 +352,7 @@ fit_forks_Lat <- lmer(forks ~ Lat + (1|population) + (1|population:block) + (1|p
 fit_stemd_Lat <- fit_stem_diam <- lmer(log(diam_stem) ~ Lat + (1|population) + (1|block) + (1|population:block) + (1|population:block:plant), data=stem_data)
 fit_capsd_Lat <- lmer(diam_caps ~ Lat + (1|population) + (1|population:block) + (1|population:block:plant), data=stem_data)
 
-yield_df <- dplyr::select(env_data, population, site, source, Lat) %>% inner_join(yield_df)
+yield_df <- dplyr::select(env_data, population, source, Lat) %>% inner_join(yield_df)
 fit_yield_Lat <- lmer(log(EST_YIELD) ~ Lat + (1|population) + (1|block) + (1|population:block), data = yield_df)
 
 fit_num_seeds_Lat <- lmer(EST_seeds_per_plant ~ Lat + (1|population) + (1|block) + (1|population:block), data=yield_df)
