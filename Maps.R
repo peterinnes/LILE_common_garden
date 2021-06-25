@@ -17,15 +17,26 @@ library(rgeos)
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 
   mutate(source=as.factor(source), population=as.factor(population))
 
-geo_data <- env_data %>% dplyr::select(source,site,Lat,Long,Elev_m) %>%
+geo_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
   filter(!source %in% c(2,5,22,32,38)) %>% #remove mistaken/duplicate Appar
   filter(!is.na(Lat) | !is.na(Long)) #only keep sources with lat/long data (exludes Appar and source 37)
 
-coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat, Elev_m=geo_data$Elev_m, population=geo_data$site, row.names = geo_data$site) %>% na.omit()
+coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat, Elev_m=geo_data$Elev_m, population=geo_data$population, row.names = geo_data$population) %>% na.omit()
+
+# coordinates of the two gardens
+ephraim_coords <- data.frame(Long=-111.5782, Lat=39.3706) #elevation 5532'
+milville_coords <- data.frame(Long=-111.816, Lat=41.656)
+garden_coords <- rbind(ephraim_coords, milville_coords)
+garden_coords$Garden <- c("Ephraim", "Milville")
 
 # convert coords df to a SpatialPointsDataframe so we can map the sites
-coords_sp <- SpatialPointsDataFrame(coords = coords[,c(1,2)], data = coords,
+coords_sp <- SpatialPointsDataFrame(coords = coords[,c(1,2)],
+                                    data = coords,
                                     proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+garden_coords_sp <-  SpatialPointsDataFrame(coords = garden_coords[,c(1,2)],
+                                            data = garden_coords,
+                                            proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
 
 #### Mapping ####
 us <- getData("GADM", country="USA", level=1) #get US States shapefile
@@ -58,7 +69,15 @@ LILE_map_2.0 <- tm_shape(elevation.sub) +
   tm_shape(coords_sp) +
   tm_text("population", size = .75, auto.placement = T) +
   tm_symbols(shape=1, size = 0.4, col = "black") +
-  tm_layout(frame = F, legend.title.size = 2, legend.text.size = 1.5)
+  tm_layout(frame = F, legend.title.size = 2, legend.text.size = 1.5) +
+  tm_shape(garden_coords_sp) +
+  tm_text("Garden", col="slateblue1", auto.placement = T) +
+  tm_symbols(shape=2, size=0.6, col="slateblue1") +
+  tm_grid(lines = F) +
+  tm_xlab("Longitude") +
+  tm_ylab("Latitude")
+
+LILE_map_2.0
 
 # basic map without elevation raster
 states <- sf::st_as_sf(map('state', c('colorado','idaho','utah', 'nevada'), plot = FALSE, fill = TRUE))
