@@ -11,7 +11,7 @@ library(tidyr)
 library(dplyr)
 library(magrittr)
 library(ggplot2)
-library(arm)
+#library(arm)
 
 #' Read-in collection data
 env_data <- read.csv("data/LILE_seed_collection_spreadsheet.csv", header=T) %>% 

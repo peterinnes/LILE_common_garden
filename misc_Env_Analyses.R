@@ -72,30 +72,58 @@ cor.test(geo_data$Lat, geo_data$Elev_m)
 cor.test(geo_data$Long, geo_data$Lat)
 
 #### PCA of environmental variables (i.e. geography AND climate) ####
+millville_coords <- data.frame(Long=-111.816, Lat=41.656)
+chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
-my_env_rda <- rda(geo_clim_df[3:24], scale = T) #PCA of scaled geo and clim vars (skip column 1 and 2 which have source/population ID)
-summary(my_env_rda)
-summary(eigenvals(my_env_rda))[2,1:12] #percent variance explained
+millville_point <- SpatialPoints(millville_coords, proj4string = chelsa@crs)
+
+millville_value <- data.frame(raster::extract(chelsa, millville_point)) #previously raster::extract(r,points)
+colnames(millville_value) <- lapply(colnames(millville_value), gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
+
+millville_clim <- cbind.data.frame(millville_coords, millville_value) %>%
+  mutate(source="millville_GARDEN", population="millville_GARDEN", Elev_m=1407)
+
+mv_loc_adapt_df <- full_join(geo_clim_df, millville_clim)
+
+ephraim_coords <- data.frame(Long=-111.5782, Lat=39.3706)
+chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
+
+ephraim_point <- SpatialPoints(ephraim_coords, proj4string = chelsa@crs)
+
+ephraim_value <- data.frame(raster::extract(chelsa, ephraim_point)) #previously raster::extract(r,points)
+colnames(ephraim_value) <- lapply(colnames(ephraim_value), gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
+
+ephraim_clim <- cbind.data.frame(ephraim_coords, ephraim_value) %>%
+  mutate(source="ephraim_GARDEN", population="ephraim_GARDEN", Elev_m=1407)
+
+env_pca_df <- full_join(geo_clim_df, ephraim_clim)
+env_pca_df <- full_join(env_pca_df, millville_clim)
+rownames(env_pca_df) <- env_pca_df$population
+env_pca_df <- env_pca_df %>% dplyr::select(-c(source, population))
+
+my_env_pca <- rda(env_pca_df, scale = T) #PCA of scaled geo and clim vars (skip column 1 and 2 which have source/population ID)
+summary(my_env_pca)
+summary(eigenvals(my_env_pca))[2,1:12] #percent variance explained
 # Get site (source/population) PC scores for use in trait-env model selection
-env_PC_scores <- data.frame(scores(my_env_rda, choices=1:3, display = "sites", scaling=0)) %>%
-  tibble::rownames_to_column("source")
+env_PC_scores <- data.frame(scores(my_env_pca, choices=1:3, display = "sites", scaling=0)) %>%
+  tibble::rownames_to_column("population")
 
 # Get Loadings of the env vars on each PC
-env_PC1_loadings <- data.frame(scores(my_env_rda, choices=1, display = "species", scaling = 0)) %>%
+env_PC1_loadings <- data.frame(scores(my_env_pca, choices=1, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC1))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
 write.csv(env_PC1_loadings, file = "results_summaries/env_PC1_loadings.csv")
 
-env_PC2_loadings <- data.frame(scores(my_env_rda, choices=2, display = "species", scaling = 0)) %>%
+env_PC2_loadings <- data.frame(scores(my_env_pca, choices=2, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC2))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
 write.csv(env_PC2_loadings, file = "results_summaries/env_PC2_loadings.csv")
 
-env_PC3_loadings <- data.frame(scores(my_env_rda, choices=3, display = "species", scaling=0)) %>% #default is scaling=2 (scale by species) is what the summary() reports
+env_PC3_loadings <- data.frame(scores(my_env_pca, choices=3, display = "species", scaling=0)) %>% #default is scaling=2 (scale by species) is what the summary() reports
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC3))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
@@ -109,28 +137,29 @@ scores(my_env_pca)
 biplot(my_env_pca)
 
 # Plot
-pops <- fortify(my_env_rda, display='sites')
-envs <- fortify(my_env_rda, display='species')
+env_pops <- fortify(my_env_pca, display='sites', scaling=0)
+env_envs <- fortify(my_env_pca, display='species', scaling=0)
 env_pca_plot <- ggplot() +
-  geom_point(data=pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
+  geom_point(data=env_pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
   #geom_text(data=pops_rda, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=3) +
-  geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5) +
-  geom_segment(data=envs, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", alpha=0.75, arrow=arrow(length=unit(0.01,"npc"))) +
-  geom_text_repel(data=envs, 
+  geom_text_repel(data=env_pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5) +
+  geom_segment(data=env_envs, aes(x=0, xend=PC1, y=0, yend=PC2), 
+               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"))) +
+  geom_text_repel(data=env_envs, 
             aes(x=PC1,y=PC2,label=Label), 
             color="red", size=4) +
-  labs(x='PC1 (44.5%)', y='PC2 (19.1%)', size=4) +
-  theme_minimal()
+  labs(x='PC1 (43.2%)', y='PC2 (18.3%)', size=4) +
+  theme_bw() +
+  theme(text = element_text(size = 14))
 
-png("plots/env_pca.png", width=8, height=6, res=300, units="in")
+jpeg("plots/env_pca.jpg", width=17, height=11.5, res=600, units="cm")
 env_pca_plot
 dev.off()
 
-autoplot(my_env_rda, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
+autoplot(my_env_pca, arrows = TRUE, geom = "text", legend = "none") #alternate plotting option
 
 # Plot of proportion variance explained
-data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
+data.frame(summary(eigenvals(my_env_pca)))[2,1:12] %>%
   pivot_longer(1:12, names_to = "PC", values_to = "Proportion_Explained") %>%
   mutate(PC=factor(PC, levels = PC)) %>%
   ggplot(aes(x=PC, y=Proportion_Explained)) +
@@ -138,17 +167,59 @@ data.frame(summary(eigenvals(my_env_rda)))[2,1:12] %>%
     labs(title="PCA of 22 geographic and climate predictors")
 
 # plot the eigenvalues
-screeplot(my_env_rda)
+screeplot(my_env_pca)
 
-# Brent wants me to check bio vars 03, 04, 08, 11, 18?
-cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio03)
-cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio04)
-cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio08)
-plot(env_PC_scores$PC2, geo_clim_scaled_df$bio11)
-cor.test(env_PC_scores$PC2, geo_clim_scaled_df$bio18)
+#### Transfer Distance tests ####
+millville_garden_pc1 <- filter(env_PC_scores, population=="millville_GARDEN")$PC1
+millville_garden_pc2 <- filter(env_PC_scores, population=="millville_GARDEN")$PC2
+
+ephraim_garden_pc1 <- filter(env_PC_scores, population=="ephraim_GARDEN")$PC1
+ephraim_garden_pc2 <- filter(env_PC_scores, population=="ephraim_GARDEN")$PC2
+
+mv_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd=(env_PC_scores$PC1 - millville_garden_pc1))
+
+eph_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd=(env_PC_scores$PC1 - ephraim_garden_pc1))
+
+surv_emms <- data.frame(emmeans(fit_surviv, specs = "population")) %>% dplyr::select(population, Survival=emmean) #April2013 survival (first overwinter survival)
+surv_vs_dist_df <- inner_join(mv_dist_from_garden, surv_emms)
+
+fecund_emm <- data.frame(emmeans(fit_log_fecundity, type="response", specs="population")) %>% dplyr::select(population, Est_fecundity=response)
+fecund_vs_dist_df <- inner_join(eph_dist_from_garden, fecund_emm)
+
+surv_vs_dist_df$pc_trd2 <- surv_vs_dist_df$pc_trd^2
+surv_trd_fit <- lm(Survival ~ pc_trd + pc_trd2, data=surv_vs_dist_df)
+summary(surv_trd_fit) #NS
+
+fecund_vs_dist_df$pc_trd2 <- fecund_vs_dist_df$pc_trd^2
+fecundity_trd_fit <- lm(Est_fecundity ~ pc_trd + pc_trd2, data=fecund_vs_dist_df)
+summary(fecundity_trd_fit) #NS
+
+mv_trd_plot2 <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd, y=Survival)) +
+  geom_point(pch=21, alpha=.75, fill="grey", size=2) +
+  #geom_text(aes(label = population)) +
+  labs(x='', y="Survival", title = "Millville") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  geom_vline(xintercept = 0, lty=2, alpha=0.5)
+
+eph_trd_plot <- ggplot(data=fecund_vs_dist_df, aes(x=pc_trd, y=Est_fecundity)) +
+  geom_point(pch=21, alpha=.75, fill="grey", size=2) +
+  #geom_text_repel(aes(label = population), alpha=0.5) +
+  labs(x="Environment PC1 transfer distance", y="Est. fecundity (seeds/plant)", title="Ephraim") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  geom_vline(xintercept = 0, lty=2, alpha=0.5)
+
+figS1 <- plot_grid(mv_trd_plot2, eph_trd_plot,
+                   labels=c("a)","b)"),
+                   ncol=1, nrow=2) 
+jpeg(file="plots/env_PC_transfer_distance.jpg",
+     width=17, height=23, res=600, units="cm")
+figS1
+dev.off()
 
 #### PCA of just climate vars ####
-# Thinking we want use these if we also want to include geographic variables as separate predictors in model selection.
+# Thinking we want use these if we also want to include geographic variables as separate predictors in model selection?
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
 
 summary(my_clim_rda)
