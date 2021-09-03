@@ -18,20 +18,6 @@ gc_data <- gc_data %>% mutate(source=as.factor(source), block=as.factor(block), 
 # multiply fatty acid percentages by 10 to convert to grams per kilogram fatty acid
 gc_data[6:13] <- apply(gc_data[6:13], 2, function(x) x*10)
 
-## Zach GC data
-#gc_data_zach <- read.csv("data/GC_data/ZachGC/ZachFlaxGC.csv", header = T) %>%
-#  mutate(source=as.factor(Accession), block=as.factor(Plot), row=as.factor(Range), BL=as.factor(BL)) %>% 
-#  dplyr::select(!c(Accession, Plot, Range)) %>%
-#  full_join(dplyr::select(env_data, source, population)) %>%
-#  filter(!source %in% c(2,5,22,32,38))
-#View(gc_data_zach)
-
-## join Brant's GC run with Zach's GC run and treat as two technical replicates
-#gc_data$tech_rep <- "brant"
-#gc_data_zach$tech_rep <- "zach"
-#gc_data <- full_join(gc_data, gc_data_zach) 
-#View(gc_data)
-
 # quick EDA
 ala_hist <- ggplot(data=gc_data, aes(x=Alphalinolenic), stat = "identity") +
   geom_histogram()
@@ -55,10 +41,10 @@ fit_stearic <- lmer(Stearic ~ population + (1|BL), data=gc_data)
 fit_oleic <- lmer(Oleic ~ population + (1|BL), data=gc_data)
 
 # 
-fit_oilComp_Geog <- lmer(Linoleic ~ Lat + Long + (1|population) + (1|block), data=gc_data)
-summary(fit_oilComp_Geog)
-anova(fit_oilComp_Geog)
-plot(fit_oilComp_Geog)
+#fit_oilComp_Geog <- lmer(Linoleic ~ Lat + Long + (1|population) + (1|block), data=gc_data)
+#summary(fit_oilComp_Geog)
+#anova(fit_oilComp_Geog)
+#plot(fit_oilComp_Geog)
 #coef(fit_oilComp_geog)$population
 
 # get emms
@@ -69,13 +55,9 @@ stearic_emm <- data.frame(emmeans(fit_stearic, specs="population")) %>% dplyr::s
 oleic_emm <- data.frame(emmeans(fit_oleic, specs="population")) %>% dplyr::select(population, Oleic=emmean)
 
 # plot emms
-ala_emm_plot <- plot(emmeans(fit_ala, specs = "population"), comparisons = T) +
-  theme_minimal() +
-  labs(x="% Alphalinolenic acid", y="Population")
-
-png("plots/ala_emm_plot.png", width = 12, height = 9, res = 300, units = "in")
-ala_emm_plot
-dev.off()
+#ala_emm_plot <- plot(emmeans(fit_ala, specs = "population"), comparisons = T) +
+  #theme_minimal() +
+  #labs(x="% Alphalinolenic acid", y="Population")
 
 # plot composition as stacked bar graph
 oil_comp_df <- merge(ala_emm, linoleic_emm) %>%
@@ -108,26 +90,25 @@ nmr_data <- nmr_data %>%
   full_join(dplyr::select(env_data, source, population)) %>%
   filter(!source %in% c(2,5,22,32,38)) %>%
   full_join(geo_data)
-nmr_data$Adj_Oil <- nmr_data$Adj_Oil*10 #convert
+nmr_data$Adj_Oil <- nmr_data$Adj_Oil*10 #convert to grams per kilogram
 
 nmr_hist <- ggplot(data=nmr_data, aes(x=Adj_Oil), stat = "identity") +
   geom_histogram()
 
 fit_oil_cont <- lm(Adj_Oil ~ population, data=nmr_data)
 #fit_oil_cont2 <- lmer(Adj_Oil ~ (1|population), data=nmr_data)
-fit_oilCont_Geog <- lmer(Adj_Oil ~ Long + (1|population), data=nmr_data)
-summary(fit_oilCont_precip)
+#fit_oilCont_Geog <- lmer(Adj_Oil ~ Long + (1|population), data=nmr_data)
+#summary(fit_oilCont_Geog)
 
-plot(fit_oil_cont)
+#plot(fit_oil_cont)
 
+#emm_oil_cont <- lsmeans(fit_oil_cont, "population")
+#oc_contrasts <- emmeans::emmeans(object=fit_oil_cont, pairwise ~ "population", adjust="tukey")
+#oc_cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters)
 
-emm_oil_cont <- lsmeans(fit_oil_cont, "population")
-oc_contrasts <- emmeans::emmeans(object=fit_oil_cont, pairwise ~ "population", adjust="tukey")
-oc_cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters)
-
-oc_cld_df <- data.frame(cld)
-oc_cld_df[c(2:6)] <- apply(cld_df[c(2:6)], 1:2, function(x) round(x, digits = 2))
-oc_cld_df$emm_letter <- apply(cld_df[c(2,7)], 1, paste, collapse="")
+#oc_cld_df <- data.frame(cld)
+#oc_cld_df[c(2:6)] <- apply(cld_df[c(2:6)], 1:2, function(x) round(x, digits = 2))
+#oc_cld_df$emm_letter <- apply(cld_df[c(2,7)], 1, paste, collapse="")
 
 oil_cont_emm_plot <- plot(emm_oil_cont, type = "response", comparisons = T, colors = c("salmon", "blue", "black")) +
   theme_minimal() +

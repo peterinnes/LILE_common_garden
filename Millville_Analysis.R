@@ -7,11 +7,13 @@ library(sp)
 library(rgdal)
 #library(remotes)
 library(climatedata)
+library(raster)
+library(sp)
+library(rgdal)
 library(ggplot2)
 library(ggrepel)
 library(lme4)
 library(lmerTest)
-library(rcompanion)
 library(dplyr)
 library(tidyr)
 library(emmeans)
@@ -22,7 +24,6 @@ library(vegan)
 #library(remotes)
 #remotes::install_github("gavinsimpson/ggvegan")
 library(ggvegan)
-library(sjPlot)
 
 options(contrasts = c("contr.sum","contr.poly"))
 
@@ -251,7 +252,7 @@ fit_surviv <- lmer(surviv_4_27_13/planted_6_12_12 ~ population + (1|Rep), data =
 #### Gather and plot ls-means of all traits ####
 # Confidence intervals, taken from the lsmeans() aka emmeans() function of package emmeans 
 mv_fit_list <- list(fit_ttl_caps, fit_CPS, fit_ttl_stems, fit_2013biomass, fit_2014biomass, fit_ht, fit_dia)
-mv_trait_list <- c("Capsules_per_plot","Capsules_per_stem", "Stems_per_plot",  "Biomass_per_plot_2013","Biomass_per_plot_2014", "Plant_height", "Plant_diameter")
+mv_trait_list <- c("Capsules_per_plot","Capsules_per_stem", "Stems_per_plot",  "Biomass_per_plot_2013","Biomass_per_plot_2014", "Height", "Plant_diameter")
 
 mv_results <- list() #list to store means and confidence intervals
 mv_results_bt <- list() ##list to store back-trasnformed means and confidence intervals 
@@ -358,14 +359,14 @@ dev.off()
 
 # Coefficient of variation, max, min, average, calculated with accession-level means
 mv_means_df2 <- mv_means_df2 %>% dplyr::select(-c(population))
-mv_cvs <- data.frame(cv=sapply(mv_means_df2[-2,], function(x) sd(x) / mean(x) * 100))
+mv_cvs <- data.frame(cv=sapply(mv_means_df2[-2,], function(x) sd(x) / mean(x) * 100)) #don't include appar (column 2)
 length(which(mv_cvs>10))
-
+which(mv_cvs>10)
 
 
 #### Gather BLUPs/conditional modes (for use in PCA/RDA?) ####
 #mv_fit_list2 <- c(fit_CPS2, fit_ttl_caps2, fit_ttl_stems2, fit_2013biomass2, #fit_2014biomass2, fit_ht2, fit_dia2)
-#mv_trait_list <- c("Capsules_per_stem", "Capsules_per_plot", #"Stems_per_plot", "2013_Biomass_per_plot","2014_Biomass_per_plot", #"Plant_height", "Plant_diameter")
+#mv_trait_list <- c("Capsules_per_stem", "Capsules_per_plot", #"Stems_per_plot", "2013_Biomass_per_plot","2014_Biomass_per_plot", #"Height", "Plant_diameter")
 #mv_blup_df <- data.frame(matrix(ncol = length(mv_trait_list), nrow = 33))
 #names(mv_blup_df) <- mv_trait_list
 #for (i in 1:length(mv_fit_list2) ){
@@ -391,7 +392,7 @@ mv_trait_pca_noAppar2 <- rda(mv_means_df2[-2,], scale = T) #pca with emmeans ins
 #summary(mv_trait_pca2)
 #biplot(mv_trait_pca)
 #biplot(mv_trait_pca_noAppar)
-biplot(mv_trait_pca_noAppar2)
+#biplot(mv_trait_pca_noAppar2)
 
 # Species (traits) loadings for first 3 PCs
 mv_trait_PC_loadings <- round(data.frame(scores(mv_trait_pca_noAppar2, choices=1:3, display = "species", scaling = 0)), digits=3) %>%
@@ -438,7 +439,7 @@ millville_trait_pca_plot2 <- ggplot() +
   theme(text = element_text(size = 14))
 
 # ggvegan version
-autoplot(mv_trait_pca_noAppar2, arrows = TRUE, geom = "text", legend = "none") #basic
+#autoplot(mv_trait_pca_noAppar2, arrows = TRUE, geom = "text", legend = "none") #basic
 
 # Join Millville and Ephraim plots together
 fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels=c("a)","b)"), ncol=1, nrow=2)
@@ -510,7 +511,7 @@ mv_rda_triplotgg <- ggplot() +
                   #color="blue", size=4) +
   annotate("text", x = -.5, y = -.19, label = "Lat", color='blue') +
   annotate("text", x = .3, y = .54, label = "Temperature", color='blue') +
-  annotate("text", x = -.09, y = -.4, label = "Precip", color='blue') +
+  annotate("text", x = -.09, y = -.4, label = "Precipitation", color='blue') +
   annotate("text", x = -.1, y = -.56, label = "Long", color='blue') +
   annotate("text", x = .5, y = -.21, label = "MDR", color='blue') +
   labs(x=paste0("RDA ","(",100*mv_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*mv_rda_eigenvals_adj[2,2],"%)"), title="Millville") +
@@ -544,6 +545,12 @@ mv_rda_triplotgg_SUPP <- ggplot() +
   labs(x=paste0("RDA1 ","(",100*mv_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*mv_rda_eigenvals_adj[2,2],"%)"), title="Millville") +
   theme_bw() +
   theme(text = element_text(size = 14))
+
+
+figS3 <- plot_grid(mv_rda_triplotgg_SUPP, eph_rda_triplotgg_SUPP, labels=c("a)","b)"), ncol=1, nrow=2)
+jpeg("plots/figS3.jpg", width=17, height=23, res=600, units="cm")
+figS3
+dev.off()
 
 # Alt/base RDA plots for comparison. Custom plot above should have same arrow positions as the base plot() function. The autoplot() function from ggvegan is slightly different--different scaling I think?
 plot(mv_full_rda, display = c("sp", "wa", "bp"))
@@ -657,7 +664,7 @@ dev.off()
 
 #### Latitudinal clines? ####
 #fit_list <- c()
-#mv_trait_list <- c("Capsules_per_stem", "Capsules_per_plot", "Stems_per_plot", #"Biomass_per_plot",  "Plant_height", "Plant_diameter")
+#mv_trait_list <- c("Capsules_per_stem", "Capsules_per_plot", "Stems_per_plot", #"Biomass_per_plot",  "Height", "Plant_diameter")
 #datasets <- list(mv_stems_caps, mv_stems_caps, mv_stems_caps, mv_biomass, ht_data, #dia_data)
 #plot_list = list()
 #
@@ -688,98 +695,6 @@ dev.off()
 #}
 #p <- cowplot::plot_grid(plotlist = plot_list, ncol = 3)
 #ggdraw(add_sub(p, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.53, vjust=4.5))
-
-
-#### PC transfer distance test for local adaptation? moved to misc_Env_Analyses ####
-#library(climatedata)
-#library(sp)
-#
-#millville_coords <- data.frame(Long=-111.816, Lat=41.656)
-#chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
-#
-#millville_point <- SpatialPoints(millville_coords, proj4string = chelsa@crs)
-#
-#millville_value <- data.frame(raster::extract(chelsa, millville_point)) #previously raster#::extract(r,points)
-#colnames(millville_value) <- lapply(colnames(millville_value), gsub, pattern = #"CHELSA_bio10_", replacement = "bio") #simplify column names
-#
-#millville_clim <- cbind.data.frame(millville_coords, millville_value) %>%
-#  mutate(source="millville_GARDEN", population="millville_GARDEN", Elev_m=1407)
-#
-#mv_loc_adapt_df <- full_join(geo_clim_df, millville_clim)
-#rownames(mv_loc_adapt_df) <- mv_loc_adapt_df$population #set source number to the rownames#, otherwise we lose these labels in the PCA below.
-#
-#mv_loc_adapt_pca <- rda(mv_loc_adapt_df[3:24], scale = T)
-#summary(mv_loc_adapt_pca)
-## Get site (source/population) PC scores for use in trait-env model selection
-#mv_loc_adapt_PC_scores <- data.frame(scores(mv_loc_adapt_pca, choices=1:3, display = #"sites", scaling=0)) %>%
-#  tibble::rownames_to_column("population")
-#
-#millville_garden_pc1 <- filter(mv_loc_adapt_PC_scores, population=="millville_GARDEN")$PC1
-#millville_garden_pc2 <- filter(mv_loc_adapt_PC_scores, population=="millville_GARDEN")$PC2
-#
-#mv_dist_from_garden <- data.frame(population=mv_loc_adapt_PC_scores$population, pc_trd#=(mv_loc_adapt_PC_scores$PC1 - millville_garden_pc1))
-#
-#biomass_vs_dist_df <- inner_join(mv_dist_from_garden, dplyr::select(mv_means_df, #population=Accession, biomass=`Biomass_per_plot_2013`))
-#caps_emm <- data.frame(emmeans(fit_ttl_caps, type="response", specs = "population")) %>%
-#  dplyr::select(population, Capsules_per_plot=response)
-#caps_vs_dist_df <- inner_join(mv_dist_from_garden, caps_emm)
-#
-#surv_emms <- data.frame(emmeans(fit_surviv, specs = "population")) %>% dplyr::select#(population, Survival=emmean) #April2013 survival (first overwinter survival)
-#surv_vs_dist_df <- inner_join(mv_dist_from_garden, surv_emms)
-#
-#millville_transfer_distance_plot <- ggplot(data=biomass_vs_dist_df, aes(x=pc_trd, y#=biomass)) +
-#  geom_point() +
-#  geom_text(aes(label = population)) +
-#  labs(x="Climate PC1 Transfer Distance", y="Biomass (g) per plot")
-#
-#mv_trd_plot2 <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd, y=Survival)) +
-#  geom_point(pch=21, alpha=.75, fill="grey", size=2) +
-#  #geom_text(aes(label = population)) +
-#  labs(x="Environment PC1 Transfer Distance", y="Survival", title = "Millville") +
-#  theme_bw() +
-#  theme(text = element_text(size = 14))
-#
-#mv_trd_plot3 <- ggplot(data=caps_vs_dist_df, aes(x=pc_trd, y=Capsules_per_plot)) +
-#  geom_point(pch=21, alpha=.75, fill="grey", size=2) +
-#  #geom_text_repel(aes(label = population), alpha=0.5) +
-#  labs(x="Env PC1 Transfer Distance (Millville garden)", y="Capsules per plot") +
-#  theme_bw()
-#
-## combine surival and fecundity TRD plots
-#figS1 <- plot_grid(eph_trd_plot, mv_trd_plot2,
-#                   labels=c("a)","b)"),
-#                   ncol=1, nrow=2) 
-#jpeg(file="plots/env_PC_transfer_distance.jpg",
-#     width=17, height=23, res=600, units="cm")
-#figS1
-#dev.off()
-#
-## basic linear model to test significance of the squared transfer distance term. (Looking #for a peak in biomass at Clim=0)
-#biomass_vs_dist_df$pc_trd2 <- biomass_vs_dist_df$pc_trd^2
-#biomass_trd_fit <- lm(biomass ~ pc_trd + pc_trd2, data=biomass_vs_dist_df)
-#summary(biomass_trd_fit)
-#
-#surv_vs_dist_df$pc_trd2 <- surv_vs_dist_df$pc_trd^2
-#surv_trd_fit <- lm(Survival ~ pc_trd + pc_trd2, data=surv_vs_dist_df)
-#summary(surv_trd_fit)
-#
-## using just latitude instead of PC1?
-#millville_lat <- 41.656
-#lat_from_garden <- data.frame(population=geo_data$population, lat_trd=(millville_lat - #geo_data$Lat))
-#
-#biomass2014 <- as.data.frame(emmeans(fit_2014biomass, specs = "Entry", type = "response")) #%>%
-#  inner_join(TvS_key) %>% inner_join(env_data) %>%
-#  dplyr::select(population, response)
-#
-#caps_vs_latdist_df <- inner_join(lat_from_garden, caps_vs_dist_df) %>%
-#  mutate(lat_trd2 = lat_trd^2)
-#
-#fit_biomass2014_trd <- lm(response ~ lat_trd + lat_trd2, data=biomass_vs_latdist_df)
-#summary(fit_biomass2014_trd) #squared term ns
-#
-#ggplot(data=caps_vs_latdist_df, aes(x=lat_trd, y= Capsules_per_plot)) +
-#  geom_point() +
-#  geom_text(aes(label = population))
 
 #### Misc plots ####
 # Seed weight vs fecundity

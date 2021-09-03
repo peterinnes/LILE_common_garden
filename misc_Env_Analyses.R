@@ -73,7 +73,7 @@ cor.test(geo_data$Long, geo_data$Lat)
 
 #### PCA of environmental variables (i.e. geography AND climate) ####
 millville_coords <- data.frame(Long=-111.816, Lat=41.656)
-chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
+#chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 millville_point <- SpatialPoints(millville_coords, proj4string = chelsa@crs)
 
@@ -86,7 +86,7 @@ millville_clim <- cbind.data.frame(millville_coords, millville_value) %>%
 mv_loc_adapt_df <- full_join(geo_clim_df, millville_clim)
 
 ephraim_coords <- data.frame(Long=-111.5782, Lat=39.3706)
-chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
+#chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 ephraim_point <- SpatialPoints(ephraim_coords, proj4string = chelsa@crs)
 
@@ -104,6 +104,8 @@ env_pca_df <- env_pca_df %>% dplyr::select(-c(source, population))
 my_env_pca <- rda(env_pca_df, scale = T) #PCA of scaled geo and clim vars (skip column 1 and 2 which have source/population ID)
 summary(my_env_pca)
 summary(eigenvals(my_env_pca))[2,1:12] #percent variance explained
+env_pca_eigenvals <- round(summary(eigenvals(my_env_pca))[,1:3], digits = 3)
+
 # Get site (source/population) PC scores for use in trait-env model selection
 env_PC_scores <- data.frame(scores(my_env_pca, choices=1:3, display = "sites", scaling=0)) %>%
   tibble::rownames_to_column("population")
@@ -148,7 +150,7 @@ env_pca_plot <- ggplot() +
   geom_text_repel(data=env_envs, 
             aes(x=PC1,y=PC2,label=Label), 
             color="red", size=4) +
-  labs(x='PC1 (43.2%)', y='PC2 (18.3%)', size=4) +
+  labs(x=paste0("PCA1 ","(",100*env_pca_eigenvals[2,1],"%)"), y=paste0("PCA2 ", "(",100*env_pca_eigenvals[2,2],"%)"), size=4) +
   theme_bw() +
   theme(text = element_text(size = 14))
 
@@ -176,25 +178,28 @@ millville_garden_pc2 <- filter(env_PC_scores, population=="millville_GARDEN")$PC
 ephraim_garden_pc1 <- filter(env_PC_scores, population=="ephraim_GARDEN")$PC1
 ephraim_garden_pc2 <- filter(env_PC_scores, population=="ephraim_GARDEN")$PC2
 
-mv_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd=(env_PC_scores$PC1 - millville_garden_pc1))
+mv_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd1=(env_PC_scores$PC1 - millville_garden_pc1), pc_trd2=(env_PC_scores$PC2 - millville_garden_pc2))
 
-eph_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd=(env_PC_scores$PC1 - ephraim_garden_pc1))
+eph_dist_from_garden <- data.frame(population=env_PC_scores$population, pc_trd1=(env_PC_scores$PC1 - ephraim_garden_pc1), pc_trd2=(env_PC_scores$PC2 - ephraim_garden_pc2))
 
 surv_emms <- data.frame(emmeans(fit_surviv, specs = "population")) %>% dplyr::select(population, Survival=emmean) #April2013 survival (first overwinter survival)
 surv_vs_dist_df <- inner_join(mv_dist_from_garden, surv_emms)
+surv_vs_dist_df$pc_trd1_sq <- surv_vs_dist_df$pc_trd1^2
+surv_vs_dist_df$pc_trd2_sq <- surv_vs_dist_df$pc_trd2^2
 
 fecund_emm <- data.frame(emmeans(fit_log_fecundity, type="response", specs="population")) %>% dplyr::select(population, Est_fecundity=response)
 fecund_vs_dist_df <- inner_join(eph_dist_from_garden, fecund_emm)
+fecund_vs_dist_df$pc_trd1_sq <- fecund_vs_dist_df$pc_trd1^2
+fecund_vs_dist_df$pc_trd2_sq <- fecund_vs_dist_df$pc_trd2^2
 
-surv_vs_dist_df$pc_trd2 <- surv_vs_dist_df$pc_trd^2
-surv_trd_fit <- lm(Survival ~ pc_trd + pc_trd2, data=surv_vs_dist_df)
+# quadratic models
+surv_trd_fit <- lm(Survival ~ pc_trd1 + pc_trd1_sq, data=surv_vs_dist_df)
 summary(surv_trd_fit) #NS
 
-fecund_vs_dist_df$pc_trd2 <- fecund_vs_dist_df$pc_trd^2
-fecundity_trd_fit <- lm(Est_fecundity ~ pc_trd + pc_trd2, data=fecund_vs_dist_df)
+fecundity_trd_fit <- lm(Est_fecundity ~ pc_trd1 + pc_trd1_sq, data=fecund_vs_dist_df)
 summary(fecundity_trd_fit) #NS
 
-mv_trd_plot2 <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd, y=Survival)) +
+mv_trd_plot <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd1, y=Survival)) +
   geom_point(pch=21, alpha=.75, fill="grey", size=2) +
   #geom_text(aes(label = population)) +
   labs(x='', y="Survival", title = "Millville") +
@@ -202,20 +207,20 @@ mv_trd_plot2 <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd, y=Survival)) +
   theme(text = element_text(size = 14)) +
   geom_vline(xintercept = 0, lty=2, alpha=0.5)
 
-eph_trd_plot <- ggplot(data=fecund_vs_dist_df, aes(x=pc_trd, y=Est_fecundity)) +
+eph_trd_plot <- ggplot(data=fecund_vs_dist_df, aes(x=pc_trd1, y=Est_fecundity)) +
   geom_point(pch=21, alpha=.75, fill="grey", size=2) +
   #geom_text_repel(aes(label = population), alpha=0.5) +
-  labs(x="Environment PC1 transfer distance", y="Est. fecundity (seeds/plant)", title="Ephraim") +
+  labs(x="Environment PC1 transfer distance", y="Est. fecundity \n (seeds/plant)", title="Ephraim") +
   theme_bw() +
   theme(text = element_text(size = 14)) +
   geom_vline(xintercept = 0, lty=2, alpha=0.5)
 
-figS1 <- plot_grid(mv_trd_plot2, eph_trd_plot,
+figS2 <- plot_grid(mv_trd_plot, eph_trd_plot,
                    labels=c("a)","b)"),
                    ncol=1, nrow=2) 
 jpeg(file="plots/env_PC_transfer_distance.jpg",
      width=17, height=23, res=600, units="cm")
-figS1
+figS2
 dev.off()
 
 #### PCA of just climate vars ####

@@ -65,6 +65,15 @@ stem_data_DI <- stem_data %>% #determinancy index
   mutate(DI=(ttl_bds_flow/ttl_caps))
 fit_DI <- lmer(sqrt(LFI) ~ -1 + population + (1|population:block), data=stem_data_LFI)
 
+# height and rust data
+eph_ht_rust <- read.csv("data/StanHtCrownRustJune3_4_13.csv", header=T) %>%
+  rename(source=Species_source) %>%
+  mutate(source=as.factor(source)) %>%
+  full_join(dplyr::select(env_data, source, population))
+
+eph_ht_rust$Rust_17th_tr <- eph_ht_rust$Rust_17th + 0.1 
+
+
 #' Next gather relevant traits together in order to estimate yield. The method here is to multiply the trait values within each accession at the lowest level possible, since we lack individual plant data for seed weight (the seed weight values are pooled at the 'plot' level—population within block). Also, we have to take averages, at the plant level, of the fruit per stem and buds/flowers per stem traits, since we have those counts for multiple stems (up to 20) per plant. Also of note is that in quite a few cases there are multiple plants of same source selected per block, due to sampling methods: top 8 most vigorous plants across all blocks selected as the 'trt B' study plants.
 a <- stem_data %>%
   dplyr::select(source,population,block,row,plot,plant,num_of_stems) %>% 
@@ -117,7 +126,7 @@ yield_df <- yield_df %>%
 write.csv(yield_df,file="data/yield_df.csv", row.names = FALSE)
 
 
-#' #### EXPLORATORY DATA ANALYSIS ####
+#### EXPLORATORY DATA ANALYSIS ####
 
 #' Histograms of each stem-related trait.
 #+ results=FALSE, message=FALSE, warning=FALSE
@@ -478,6 +487,36 @@ yield_df %>%
 #' 10. Estimated fecundity (seeds per plant) — Fruit fill * Fruits per stem * Stems per plant
 yield_df$EST_fecundity <- yield_df$num_of_stems * (yield_df$fruit_per_stem + yield_df$bds_flws_per_stem) * yield_df$good_fill
 
+#' 11. Height (cm)
+eph_ht_rust %>%
+  mutate(yjit=jitter(0*Height)) %>%
+  ggplot() +
+  geom_point(mapping=aes(x=Height, col=Block, y=yjit),shape=1,alpha=0.5) +
+  facet_wrap(facets = ~ population) +
+  ylim(-0.1,0.1)
+
+eph_ht_rust %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=Height,y=stat(density)),bins=30) +
+    facet_wrap(facets = ~ population)
+
+#' 12? Rust
+rust_scores_plot <- eph_ht_rust %>%
+  mutate(yjit=jitter(0*Rust_17th)) %>%
+  ggplot() +
+  geom_point(mapping=aes(x=Rust_17th, col=Block, y=yjit),shape=1,alpha=0.5) +
+  facet_wrap(facets = ~ population) +
+  labs(x="Rust presence (0=no visible evidence; 4=all stems w/ rust up to half the stem height)", y="y-jitter")
+  ylim(-0.1,0.1)
+
+jpeg("plots/rust_presence.jpg", width=17, height=23, res=600, units="cm")
+rust_scores_plot
+dev.off()
+  
+eph_ht_rust %>%
+  ggplot() +
+  geom_histogram(mapping=aes(x=Rust_17th,y=stat(density)),bins=30) +
+  facet_wrap(facets = ~ population)
 
 #' EDA miscellaneous scraps
 # Data summaries
@@ -566,4 +605,8 @@ ggplot(data=filter(stem_data, trt=="B"), aes(x=population, y=diam_caps)) +
   geom_boxplot(alpha=0.5) + 
   theme(axis.text.x = element_text(angle=45, size=6))
 
+# Rust
+ggplot(data=eph_ht_rust, aes(x=population, y=Rust_17th)) +
+  geom_violin(alpha=0.5) +
+  theme(axis.text.x = element_text(angle=45, size=6))
 
