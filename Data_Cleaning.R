@@ -4,7 +4,13 @@ sw_data <- read.csv("raw_data/LILE_yield_data_2013_seed_wt.csv", header=T, na.st
 
 library(dplyr)
 
-# this code is to fill in empty rows of the flax data from USFS. As of 5/29 only the seed_wt data sheet has been cleaned/filled using this code. Empty rows are being filled with the values in the row up to 3 rows above it (data was only entered for the first out of 5 replicates per plot, this is to fill in the source, block, and field row numbers for each of the other 4 replicates, which share the same values). It will also delete rows in which all elements are NA. It could be easily modified to fill empty rows of other data sets
+# this code is to fill in empty rows of the flax data from USFS. 
+# Empty rows are being filled with the values in the row up to 3 rows above it
+# (data was only entered for the first out of 5 replicates per plot, 
+# this is to fill in the source, block, and field row numbers for each
+# of the other 4 replicates, which share the same values). It will
+# also delete rows in which all elements are NA. It could be easily 
+# modified to fill empty rows of other data sets
 
 # basic test
 test <- c(14,NA,NA,NA,NA,12,NA,NA,NA,NA)
@@ -67,7 +73,7 @@ ff_data$plant[429] <- 4
 
 
 
-write.csv(data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE_yield_data_2013_fruit_fill.csv", row.names = F)
+write.csv(ff_data, "~/Desktop/FLAX/LILE_common_garden_proj/data/cleaned_LILE_yield_data_2013_fruit_fill.csv", row.names = F)
 
 #### stem data
 stem_data <- read.csv("raw_data/LILE_yield_data_2013_stem_and_fruit.csv", header=T, na.strings = c("","NA"))

@@ -12,6 +12,7 @@ library(sp)
 library(rgdal)
 library(ggplot2)
 library(ggrepel)
+library(cowplot)
 library(lme4)
 library(lmerTest)
 library(dplyr)
@@ -20,6 +21,7 @@ library(emmeans)
 library(pbkrtest)
 library(multcomp)
 library(multcompView)
+library(sjstats)
 library(vegan)
 #library(remotes)
 #remotes::install_github("gavinsimpson/ggvegan")
@@ -92,11 +94,12 @@ mv_stems_caps <- inner_join(mv_stems_caps, dplyr::select(env_data, source, popul
 # Linear models
 
 # 1. Capsules per STEM. log transform.
-fit_CPS <- lmer(log(Capsules/sub_stems) ~ population + (1|Rep), data = mv_stems_caps) 
+mv_stems_caps$CPS <- mv_stems_caps$Capsules/mv_stems_caps$sub_stems
+fit_CPS <- lmer(log(CPS) ~ population + (1|Rep), data = mv_stems_caps) 
 #plot(fit_CPS) THIS IS CAUSING R TO ABORT first encountered 6.11.21 ... whish was after system freeze, hard shut down, and subsequent updates to the OS.
 qqnorm(resid(fit_CPS))
 
-fit_CPS2 <- lmer(log(Capsules/sub_stems) ~ (1|population) + (1|Rep), data = mv_stems_caps) #also fit model with entry (population) as random effect so we can use BLUPs in RDA, instead of ls-means
+#fit_CPS2 <- lmer(log(Capsules/sub_stems) ~ (1|population) + (1|Rep), data = mv_stems_caps) #also fit model with entry (population) as random effect
 coef(fit_CPS2)$population
 
 # Caps per plant: Capsules/sub_stems * ttl_stems = est_ttl_capsules. Then divide est_ttl_capules by the number of surviving plants in the plot. Using the survival data from the mv_stems_caps spreadsheet--this closely matches survival counts taken later in August, closer to Harvest (but this Aug data is incomplete so we don't want to use it directly)
@@ -106,7 +109,8 @@ coef(fit_CPS2)$population
 
 # 2. Total capsules per PLOT (incorporates survival). square root transform
 fit_ttl_caps <- lmer(sqrt(est_ttl_capsules) ~ population + (1|Rep), data = mv_stems_caps)
-fit_ttl_caps2 <- lmer(sqrt(est_ttl_capsules) ~ (1|population) + (1|Rep), data = mv_stems_caps)
+#fit_ttl_caps2 <- lmer(sqrt(est_ttl_capsules) ~ (1|population) + (1|Rep), data = mv_stems_caps)
+
 
 ## Stems per plant. Use same sqrt transform as for capsules per plant
 #mv_stems_caps$spp_tr <- sqrt(mv_stems_caps$ttl_stems/mv_stems_caps$surv_4_27_13) 
@@ -114,7 +118,8 @@ fit_ttl_caps2 <- lmer(sqrt(est_ttl_capsules) ~ (1|population) + (1|Rep), data = 
 
 # 3. Stems per PLOT (incorporates survival). square root-transform
 fit_ttl_stems <- lmer(sqrt(ttl_stems) ~ population + (1|Rep), data = mv_stems_caps)
-fit_ttl_stems2 <- lmer(sqrt(ttl_stems) ~ (1|population) + (1|Rep), data = mv_stems_caps)
+#fit_ttl_stems2 <- lmer(sqrt(ttl_stems) ~ (1|population) + (1|Rep), data = mv_stems_caps)
+
 
 #### Biomass data ####
 mv_biomass <- read.csv("data/TomJ_BiomassFlax2013_14_15_ANALYZE_THIS.csv", skip=1, header = T) %>%
@@ -144,12 +149,12 @@ dim(mv_biomass) #should be same as the stem and caps data, 254 rows.
 # Linear models
 # 4. 2013 Biomass per PLOT (incorporates survival). square root transform.
 fit_2013biomass <- lmer(sqrt(ttl_weight_2013) ~ population + (1|Rep), data=mv_biomass)
-fit_2013biomass2 <- lmer(sqrt(ttl_weight_2013) ~ (1|population) + (1|Rep), data=mv_biomass)
+#fit_2013biomass2 <- lmer(sqrt(ttl_weight_2013) ~ (1|population) + (1|Rep), data=mv_biomass)
 
 # 5. 2014 Biomass per PLOT (incorporates survival). square root transform.
 fit_2014biomass <- lmer(sqrt(ttl_weight_2014) ~ population + (1|Rep), data=mv_biomass)
-fit_2014biomass2 <- lmer(sqrt(ttl_weight_2014) ~ (1|population) + (1|Rep), data=mv_biomass)
-
+#fit_2014biomass2 <- lmer(sqrt(ttl_weight_2014) ~ (1|population) + (1|Rep), data=mv_biomass)
+ 
 ## Biomass per plant (2013). Again, skipping per-plant models bc survival data is unreliable
 #mv_biomass$BPP <- mv_biomass$ttl_weight_2013 / mv_biomass$survivorship_4_27_13 
 #mv_biomass$BPP[mv_biomass$BPP == 0] <- NA #convert Zeros in BPP to NA
@@ -193,12 +198,12 @@ dia_plot_means <- dia_data %>% group_by(Plot, population) %>% na.omit() %>% summ
 
 # Linear models
 # 6. PLANT height
-fit_ht <- lmer(height ~ population + (1|Plot), data = ht_data) #adding random effect of plot because we have measurements of multiple individual plants per plot. Rep (block) random effect is zero so we will remove.
-fit_ht2 <- lmer(height ~ (1|population) + (1|Plot), data = ht_data)
+fit_ht <- lmer(height ~ population + (1|Plot), data = ht_data) #adding random effect of plot because we have measurements of multiple individual plants per plot. variance due to Rep (block) random effect is essentially zero so we will remove.
+#fit_ht2 <- lmer(height ~ population + (1|Rep), data = ht_data) #model with Rep instead of Plot RE, used to calculate coefficient of variation
 
 # 7. PLANT diameter
 fit_dia <- lmer(dia ~ population + (1|Rep) + (1|Plot), data = dia_data)
-fit_dia2 <- lmer(dia ~ (1|population) + (1|Rep) + (1|Plot), data = dia_data)
+#fit_dia2 <- lmer(dia ~ population + (1|Rep), data = dia_data) #model without Plot RE, used to calculate coefficient of variation
 
 #### Survival data ####
 ## Skip analysis of survival except for use in transfer distance test because we do not have survival measured at exact date of harvest. Also, survival is ultimately taken into account for plot-level measurements of number of stems, biomass, etc.
@@ -327,7 +332,19 @@ mv_means_df3 <- mv_means_df3 %>% arrange(desc(Capsules_per_plot))
 #names(mv_means_df3)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
 write.csv(mv_means_df3, "plots/millville_trait_means_table.csv", row.names = F)
 
+#### Cet coefficients of variation ####
+# want to use cv() from sjstats. This function calculates the cv by first using performance::rmse() to find the root mean squared error of a mixed model. This is divided by the grand mean of the same model. problem is that it calculates the grand mean from untransformed response variables. So we will calculate cv manually, with the same performance::rmse() that the cv() function from sjstats uses.
 
+mv_cvs <- c()
+# Use the same models as above 
+for (fit in mv_cv_fit_list) {
+  #resid_sd <- data.frame(VarCorr(fit))$sdcor[2]
+  rmse <- performance::rmse(fit)
+  grand_mean <- fixef(fit)[1]
+  cv <- rmse/grand_mean
+  mv_cvs <- append(mv_cvs, cv)
+}
+names(mv_cvs) <- mv_trait_list
 
 
 # Trying to figure out how to create a nice table
@@ -356,13 +373,6 @@ png("plots/millville_traits_comparisons.png", width=12, height=9, res=300, units
 #x11()
 mv_emm_grid
 dev.off()
-
-# Coefficient of variation, max, min, average, calculated with accession-level means
-mv_means_df2 <- mv_means_df2 %>% dplyr::select(-c(population))
-mv_cvs <- data.frame(cv=sapply(mv_means_df2[-2,], function(x) sd(x) / mean(x) * 100)) #don't include appar (column 2)
-length(which(mv_cvs>10))
-which(mv_cvs>10)
-
 
 #### Gather BLUPs/conditional modes (for use in PCA/RDA?) ####
 #mv_fit_list2 <- c(fit_CPS2, fit_ttl_caps2, fit_ttl_stems2, fit_2013biomass2, #fit_2014biomass2, fit_ht2, fit_dia2)
@@ -442,6 +452,7 @@ millville_trait_pca_plot2 <- ggplot() +
 #autoplot(mv_trait_pca_noAppar2, arrows = TRUE, geom = "text", legend = "none") #basic
 
 # Join Millville and Ephraim plots together
+# library(cowplot)
 fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels=c("a)","b)"), ncol=1, nrow=2)
 jpeg("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
 fig2
@@ -452,7 +463,6 @@ mv_means_df2$population <- rownames(mv_means_df2)
 #fullRDA_df <- inner_join(mv_pop_trait_means, geo_clim_df) %>%
 #  dplyr::select(-c(Entry,source))
 
-# use population level BLUPs (i.e. conditional modes). Use emmeans instead?
 mv_fullRDA_df <- inner_join(mv_means_df2, geo_clim_df)
 rownames(mv_fullRDA_df) <- mv_fullRDA_df$population
 mv_fullRDA_df <- dplyr::select(mv_fullRDA_df, -c(population, source))

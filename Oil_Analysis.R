@@ -7,8 +7,10 @@ library(ggplot2)
 library(dichromat)
 library(lme4)
 library(lmerTest)
+library(cowplot)
+library(sjstats)
 
-#### (oil composition) ####
+#### Oil composition ####
 
 gc_data <- read.csv("data/GC_data/BrantGC/Brant_Flax_GC_Complete.csv", header = T, na.strings = c(".","n.a.")) %>%
   dplyr::select(Sample.Number, source=Accession, block=Plot, row=Range, BL, Palmitic, Palmitoleic, Stearic, Oleic, Linoleic, Alphalinolenic, Arachidic, Gondoic) 
@@ -80,9 +82,9 @@ jpeg("plots/oil_composition_plot.png", width = 17, height = 10, res = 600, units
 oil_comp_plot
 dev.off()
 
-#####################
+
 #### Oil Content ####
-#####################
+
 nmr_data <- read.csv("data/perennial_flax_paperNMR.csv", header=T) %>%
   dplyr::select(source=ID, Rep, Entry_number, Adj_Oil)
 nmr_data <- nmr_data %>%
@@ -178,7 +180,24 @@ for (i in 1:length(oil_trait_list) ){
 oil_means_df2 <- oil_means_df2 %>% arrange(desc(Oil_content)) %>%
   tibble::rownames_to_column("Accession") %>%
   relocate(Accession, .before = Oil_content)
-#names(oil_means_df2)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
 write.csv(oil_means_df2, "plots/Oil_means_table.csv", row.names = F)
 
-apply(oil_means_df2, 2, function(x) signif(x, 4))
+#### Cet coefficients of variation ####
+oil_cvs <- c()
+# Use the same models as above 
+for (fit in oil_fit_list) {
+  #resid_sd <- data.frame(VarCorr(fit))$sdcor[2]
+  rmse <- performance::rmse(fit)
+  grand_mean <- mean(insight::get_response(fit))
+  cv <- rmse/grand_mean
+  oil_cvs <- append(oil_cvs, cv)
+}
+names(oil_cvs) <- oil_trait_list
+
+#oil_cv_fit_list <-  list(fit_ala, fit_linoleic, fit_oleic, fit_palmitic, fit_stearic)
+#for (fit in oil_cv_fit_list) {
+#  resid_sd <- data.frame(VarCorr(fit))$sdcor[2]
+#  grand_mean <- fixef(fit)[1]
+#  oil_cvs <- append(oil_cvs, coef.var(resid_sd, grand_mean))
+#}
+#names(oil_cvs) <- oil_trait_list
