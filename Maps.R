@@ -39,7 +39,7 @@ garden_coords_sp <-  SpatialPointsDataFrame(coords = garden_coords[,c(1,2)],
                                             proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
 
 #### Mapping ####
-us <- getData("GADM", country="USA", level=1) #get US States shapefile
+us <- raster::getData("GADM", country="USA", level=1) #get US States shapefile
 iwstates <- c("Colorado", "Utah", "Idaho", "Nevada") #list of states I want to plot
 
 elevation.sub <- raster("data/lile_elevation.gri")
@@ -51,10 +51,11 @@ state.sub <- us[as.character(us@data$NAME_1) %in% iwstates, ]
 elev_model <- get_elev_raster(state.sub, z = 9) #zoom=9
 
 # Crop and mask the elevation raster to our subset of sates
-elevation.sub <- crop(elev_model, extent(state.sub))
+elevation.sub <- raster::crop(elev_model, extent(state.sub))
 elevation.sub <- mask(elevation.sub, state.sub)
 
 writeRaster(elevation.sub, "data/lile_elevation.raster")
+
 
 # basic map
 plot(elevation.sub)
@@ -69,13 +70,13 @@ LILE_map_2.0 <- tm_shape(elevation.sub) +
   tm_shape(coords_sp) +
   tm_text("population", size = .75, auto.placement = T) +
   tm_symbols(shape=1, size = 0.4, col = "black") +
-  tm_layout(frame = F, legend.title.size = 2, legend.text.size = 1.5) +
+  tm_layout(frame = F, legend.title.size = 1.5, legend.text.size = 1) +
   tm_shape(garden_coords_sp) +
   tm_text("Garden", col="slateblue1", auto.placement = T) +
   tm_symbols(shape=2, size=0.6, col="slateblue1") +
-  tm_grid(lines = F) +
-  tm_xlab("Longitude") +
-  tm_ylab("Latitude")
+  tm_grid(lines = F, labels.size = 1) +
+  tm_xlab("Longitude", size=1.5) +
+  tm_ylab("Latitude", size=1.5)
 
 LILE_map_2.0
 
@@ -88,6 +89,6 @@ LILE_map <- ggplot() +
   theme_classic()
 LILE_map
 
-png("plots/LILE_map_2.0.png", width=8, height=7, res=300, units="in")
+png("plots/LILE_map_2.0.png", width=17, height=17, res=600, units="cm")
 LILE_map_2.0
 dev.off()

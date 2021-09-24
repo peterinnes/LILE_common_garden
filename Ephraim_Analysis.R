@@ -683,3 +683,26 @@ ggplot(data = melted_corr_mat, aes(Var2, Var1, fill = value))+
   ylab("") +
   xlab("")
 coord_fixed()
+
+#### Fecundity vs. seed mass ####
+# FIG S5
+S5_df <- dplyr::select(eph_means_df2, Seed_mass, Est_fecundity) %>%
+  mutate(species="L. lewisii")
+S5_df[2,3] <- "L. perenne"
+
+figS5 <- ggplot(data=S5_df, aes(x=Seed_mass, y=Est_fecundity, color=species, shape=species)) +
+  geom_point(alpha=0.5, size=3) +
+  geom_smooth(data=S5_df[-2,], aes(x=Seed_mass, y=Est_fecundity), method=lm) +
+  labs(x="Seed mass (mg per 50 seeds)", y="Est. fecundity (seeds per plant)") +
+  theme_bw() +
+  theme(legend.title = element_blank(), legend.position = c(0.8, 0.7)) +
+  theme(text = element_text(size = 14))
+
+jpeg(file="plots/figS5.jpg",
+     width=17, height=12, res=600, units="cm")
+figS5
+dev.off()
+
+cor.test(S5_df$Est_fecundity[-2], S5_df$Seed_mass[-2])
+  
+

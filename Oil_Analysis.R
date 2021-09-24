@@ -69,7 +69,7 @@ oil_comp_df <- merge(ala_emm, linoleic_emm) %>%
 
 oil_comp_df_long <- pivot_longer(oil_comp_df, names_to = "Fatty_acid", values_to = "Composition", cols = 2:6 ) %>% inner_join(dplyr::select(env_data, population, Lat, Long))
 
-# stacked bar graph with accessions ordered by latitude. Composition is percentage by weight of total fatty acids
+# FIG4. stacked bar graph with accessions ordered by latitude. Composition is percentage by weight of total fatty acids
 oil_comp_plot <- oil_comp_df_long %>% ggplot(aes(x=reorder(population, Lat), y=Composition, fill=Fatty_acid)) +
   geom_bar(stat="identity") +
   theme(axis.text.x = element_text(angle = 90, vjust=0.5)) +

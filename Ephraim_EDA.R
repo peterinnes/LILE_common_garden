@@ -501,12 +501,13 @@ eph_ht_rust %>%
     facet_wrap(facets = ~ population)
 
 #' 12? Rust
+#' FIG S5
 rust_scores_plot <- eph_ht_rust %>%
   mutate(yjit=jitter(0*Rust_17th)) %>%
   ggplot() +
   geom_point(mapping=aes(x=Rust_17th, col=Block, y=yjit),shape=1,alpha=0.5) +
   facet_wrap(facets = ~ population) +
-  labs(x="Rust presence (0=no visible evidence; 4=all stems w/ rust up to half the stem height)", y="y-jitter")
+  labs(x="Rust presence (0=no visible evidence; 4=all stems w/ rust pustules covering at least half the stem length)", y="y-jitter")
   ylim(-0.1,0.1)
 
 jpeg("plots/rust_presence.jpg", width=17, height=23, res=600, units="cm")

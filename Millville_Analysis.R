@@ -231,6 +231,9 @@ head(mv_surviv)
 # Convert characters to integers
 mv_surviv[5:10] <- as.integer(unlist(mv_surviv[5:10])) 
 
+test <- dplyr::inner_join(mv_surviv, mv_biomass)
+cor.test(test$surviv_8_12_14, test$ttl_weight_2014)
+           
 #dim(mv_surviv)
 
 ## Gather all evidence for survival numbers at first harvest to compare and decide what values to use.
@@ -524,7 +527,7 @@ mv_rda_triplotgg <- ggplot() +
   annotate("text", x = -.09, y = -.4, label = "Precipitation", color='blue') +
   annotate("text", x = -.1, y = -.56, label = "Long", color='blue') +
   annotate("text", x = .5, y = -.21, label = "MDR", color='blue') +
-  labs(x=paste0("RDA ","(",100*mv_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*mv_rda_eigenvals_adj[2,2],"%)"), title="Millville") +
+  labs(x=paste0("RDA1 ","(",100*mv_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*mv_rda_eigenvals_adj[2,2],"%)"), title="Millville") +
   theme_bw() +
   theme(text = element_text(size = 14))
   
