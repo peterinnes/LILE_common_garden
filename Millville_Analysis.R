@@ -708,25 +708,3 @@ dev.off()
 #}
 #p <- cowplot::plot_grid(plotlist = plot_list, ncol = 3)
 #ggdraw(add_sub(p, "Latitude", vpadding=grid::unit(0,"lines"),y=6, x=0.53, vjust=4.5))
-
-#### Misc plots ####
-# Seed weight vs fecundity
-sw_f_df <- dplyr::select(eph_means_df2, Seed_weight, Est_fecundity) %>%
-  tibble::rownames_to_column("Accession") %>%
-  mutate(Species=ifelse(Accession=="Appar", 'L. perenne (\'Appar\')', 'L. lewisii'))
-
-plot(eph_means_df2$Seed_weight, eph_means_df2$Est_fecundity)
-fecund_vs_sw <- ggplot(aes(x=Seed_weight, y=Est_fecundity, color=Species), data=sw_f_df) +
-  geom_point(size=3) +
-  labs(x="Seed weight (g /50 seeds)", y="Est. fecundity (seeds per plant)") +
-  theme_bw() +
-  theme(legend.title=element_blank()) +
-  theme(legend.position = c(.75,.75)) +
-  theme(text = element_text(size = 14))
-  
-
-
-jpeg(file="plots/fecund_vs_sw.jpg",
-     width=17, height=13, res=600, units="cm")
-fecund_vs_sw
-dev.off()
