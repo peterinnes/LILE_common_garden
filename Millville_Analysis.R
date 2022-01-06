@@ -53,6 +53,7 @@ values <- raster::extract(chelsa,points) #previously raster::extract(r,points)
 
 clim_data <- cbind.data.frame(coordinates(points),values) %>%
   tibble::rownames_to_column("source")
+
 colnames(clim_data)[4:22] <- lapply(colnames(clim_data)[4:22], gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
 
 # Combine climate and geography predictors
@@ -262,78 +263,98 @@ fit_surviv <- lmer(surviv_4_27_13/planted_6_12_12 ~ population + (1|Rep), data =
 mv_fit_list <- list(fit_ttl_caps, fit_CPS, fit_ttl_stems, fit_2013biomass, fit_2014biomass, fit_ht, fit_dia)
 mv_trait_list <- c("Capsules_per_plot","Capsules_per_stem", "Stems_per_plot",  "Biomass_per_plot_2013","Biomass_per_plot_2014", "Height", "Plant_diameter")
 
-mv_results <- list() #list to store means and confidence intervals
+#mv_results <- list() #list to store means and confidence intervals
 mv_results_bt <- list() ##list to store back-trasnformed means and confidence intervals 
 #mv_esp_list <- list() #list to store effect size plots
-mv_emm_list <- list() #list to store emm plot
+#mv_emm_list <- list() #list to store emm plot
 #cld_list <- list() #list to store compact letter displays of each model
 
 for (i in 1:length(mv_fit_list) ){
   
   fit <- mv_fit_list[[i]]
-  lsmeans <- as.data.frame(lsmeans(fit, "population")) #as data frame
-  emm1 <- lsmeans(fit, "population") #same as lsmeans above but dont convert to df
-  emm2 <- as.data.frame(lsmeans(fit, "population", type="response")) #separate object for backtransformed lsmeans
+  #lsmeans <- as.data.frame(lsmeans(fit, "population")) #as data frame
+  #emm1 <- lsmeans(fit, "population") #same as lsmeans above but dont convert to df
+  #emm2 <- as.data.frame(lsmeans(fit, "population", type="response")) #separate object for backtransformed lsmeans
   
   # Plotting means and CIs with emmeans:::plot.emmGrid. in order to reorder the populations on y-axis, we need to edit the .plot.srg function in emmeans package:
   # trace(emmeans:::.plot.srg, edit=T). Edit lines 239-240, change aes_() to aes() and delete tilde from in front of x and y variables. Then use reorder() on the y variable.
-  emm_plot <- plot(emm1, type = "response", comparisons = T, colors = c("salmon", "blue", "black")) +
-    theme_minimal() +
-    xlab(mv_trait_list[i]) +
-    ylab("")
-  mv_emm_list[[i]] <- emm_plot #store plot
+  #emm_plot <- plot(emm1, type = "response", comparisons = T, colors = #c("salmon", "blue", "black")) +
+  #  theme_minimal() +
+  #  xlab(mv_trait_list[i]) +
+  #  ylab("")
+  #mv_emm_list[[i]] <- emm_plot #store plot
   
   # Compact letter display
   contrasts <- emmeans::emmeans(object=fit, type="response", pairwise ~ "population", adjust="tukey") #tests are on transformed scale but display on response scale
-  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=F)
+  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=T)
   cld_df <- data.frame(cld)
   
   # Renaming columns and storing results
-  names(lsmeans)[2] <- mv_trait_list[[i]] #Change 'lsmean' column name to trait name before storing in results
-  mv_results[[i]] <- lsmeans #store means and confidence intervals
-  lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort descending trait value to make more readable
+  #names(lsmeans)[2] <- mv_trait_list[[i]] #Change 'lsmean' column name to trait name before storing in results
+  #mv_results[[i]] <- lsmeans #store means and confidence intervals
+  #lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort descending trait value to make more readable
   # Same thing but with backtransformed clds/emms. This will be results table 2(?) in manuscript.
   names(cld_df)[2] <- mv_trait_list[[i]] 
   mv_results_bt[[i]] <- cld_df
   #emm2 <- emm2 %>% arrange(-emm2[2]) 
 }
-names(mv_results) <- mv_trait_list
+#names(mv_results) <- mv_trait_list
 names(mv_results_bt) <- mv_trait_list
 
-# store emms in one dataframe with population as rowname. transformed variables are not back-transformed here.
-mv_means_df <- data.frame(matrix(ncol = length(mv_trait_list), nrow = length(unique(mv_stems_caps$population))))
-names(mv_means_df) <- mv_trait_list
-rownames(mv_means_df) <- mv_results[[1]]$population
-for (i in 1:length(mv_trait_list) ){
-  mv_means_df[i]  <- mv_results[[i]][2]
-}
-mv_means_df <- mv_means_df %>% arrange(desc(Capsules_per_plot)) %>%
-  #round(digits=2) %>%
-  tibble::rownames_to_column("Accession") %>%
-  relocate(Accession, .before = Capsules_per_plot)
-#write.csv(mv_means_df, file="plots/millville_trait_means_table.csv", row.names = F)
+## store emms in one dataframe with population as rowname. transformed variables are not back-transformed here.
+#mv_means_df <- data.frame(matrix(ncol = length(mv_trait_list), nrow = length(unique(mv_stems_caps$population))))
+#names(mv_means_df) <- mv_trait_list
+#rownames(mv_means_df) <- mv_results[[1]]$population
+#for (i in 1:length(mv_trait_list) ){
+#  mv_means_df[i]  <- mv_results[[i]][2]
+#}
+#mv_means_df <- mv_means_df %>% arrange(desc(Capsules_per_plot)) %>%
+#  #round(digits=2) %>%
+#  tibble::rownames_to_column("Accession") %>%
+#  relocate(Accession, .before = Capsules_per_plot)
+##write.csv(mv_means_df, file="plots/millville_trait_means_table.csv", row.names = F)
 
 # dataframe with back-transformed emmeans, without letters, for PCA/RDA.
-mv_means_df2 <- data.frame(matrix(ncol = length(mv_trait_list), nrow = length(unique(mv_stems_caps$population))))
-names(mv_means_df2) <- mv_trait_list
-rownames(mv_means_df2) <- mv_results_bt[[1]]$population
+mv_means_df2 <- data.frame(population=mv_results_bt[[1]]$population) 
 for (i in 1:length(mv_trait_list) ){
-  mv_means_df2[i] <- mv_results_bt[[i]][2]
+  mv_means_df2 <- full_join(mv_means_df2, mv_results_bt[[i]][1:2])
 }
 
+write.csv(mv_means_df2, "data/mv_means_df2.csv") #save emmeans to skip above computation 
+
 # Store emms with clds in dataframe with column for population/accession. This will be for publication. 
-mv_means_df3 <- data.frame(matrix(ncol=8, nrow=33))
-names(mv_means_df3) <- names(mv_means_df)
-mv_means_df3$Accession <- mv_results_bt[[1]]$population
+mv_means_df3 <- data.frame(Accession=mv_results_bt[[1]]$population) 
 for (i in 1:length(mv_trait_list) ){
   emm_sf <- data.frame(apply(mv_results_bt[[i]][c(2:6)], 1:2,
-                             function(x) signif(x, 3))) %>%
-    mutate(letter_group=mv_results_bt[[i]][7])# change sig figs
-  mv_means_df3[i+1] <- apply(emm_sf[c(1,6)], 1, paste, collapse="") #combine emmeans and letters into single column
+                             function(x) signif(x, 3))) %>% # change sig figs
+    mutate(.group=mv_results_bt[[i]][7], Accession=mv_results_bt[[i]]$population)
+  
+  emm_sf <- emm_sf %>% mutate(mean_and_letters=apply(emm_sf[c(1,6)], 1, paste, collapse="")) %>%
+    dplyr::select(c(7,8))
+  names(emm_sf)[2] <- mv_trait_list[i]
+  mv_means_df3 <- full_join(mv_means_df3, emm_sf)
+           
+  
+  #mv_means_df3[i+1] <- apply(emm_sf[c(1,6)], 1, paste, collapse="") #combine emmeans and letters into single column
 }
+
 mv_means_df3 <- mv_means_df3 %>% arrange(desc(Capsules_per_plot))
 #names(mv_means_df3)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
 write.csv(mv_means_df3, "plots/millville_trait_means_table.csv", row.names = F)
+
+# Make emm comparisons plot for 2013 Biomass
+# Function for making y axis of these plots less crowded:
+every_nth = function(n) {
+  return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})
+} 
+
+emm_biomass13 <- emmeans(fit_2013biomass, "population")
+plot_emm_biomass13 <- emmeans:::plot.emmGrid(emm_biomass13, type = "response", comparisons = T) +
+  theme_bw() +
+  xlab("2013 Biomass (g/plot); Millville") +
+  ylab("") +
+  theme(text = element_text(size = 14)) +
+  scale_y_discrete(breaks = every_nth(n = 2))
 
 #### Cet coefficients of variation ####
 # want to use cv() from sjstats. This function calculates the cv by first using performance::rmse() to find the root mean squared error of a mixed model. This is divided by the grand mean of the same model. problem is that it calculates the grand mean from untransformed response variables. So we will calculate cv manually, with the same performance::rmse() that the cv() function from sjstats uses.
@@ -399,7 +420,7 @@ dev.off()
 #summary(mv_trait_pca)
 
 #mv_trait_pca_noAppar <- rda(mv_blup_df[-2,], scale = T)
-mv_trait_pca_noAppar2 <- rda(mv_means_df2[-2,], scale = T) #pca with emmeans instead of blups. exlcude Appar (row 2)
+#mv_trait_pca_noAppar2 <- rda(mv_means_df2[-2,], scale = T) #pca with emmeans instead of blups. exlcude Appar (row 2)
 #scaled_mv_blups <- scale(mv_blup_df, center = T, scale = T)
 #mv_trait_pca2 <- princomp(scaled_mv_blups) #just making sure the scaling function within the rda function is working as expected (centered and scaled)
 #summary(mv_trait_pca2)
@@ -407,62 +428,62 @@ mv_trait_pca_noAppar2 <- rda(mv_means_df2[-2,], scale = T) #pca with emmeans ins
 #biplot(mv_trait_pca_noAppar)
 #biplot(mv_trait_pca_noAppar2)
 
-# Species (traits) loadings for first 3 PCs
-mv_trait_PC_loadings <- round(data.frame(scores(mv_trait_pca_noAppar2, choices=1:3, display = "species", scaling = 0)), digits=3) %>%
-  arrange(desc(abs(PC1)))
-mv_trait_PC_loading_cutoff <- sqrt(1/ncol(mv_means_df2)) #.378 is loading of a single variable if each variable contributed equally; sum of squares of all loadings for an individual principal components must sum to 1. variables greater than this contribute substantially to a particular PC.
-mv_PCA_eigenvals <- round(summary(eigenvals(mv_trait_pca_noAppar2))[,1:3], digits = 3)
-
-write.csv(rbind(mv_trait_PC_loadings, mv_PCA_eigenvals), "plots/millville_trait_PC_loadings_eigenvals.csv")
-
-
-mv_fort_pops <- fortify(mv_trait_pca_noAppar2, display='sites', scaling=0)
-mv_fort_traits <- fortify(mv_trait_pca_noAppar2, display='species', scaling=0)
-
-# PC1 v PC2
-millville_trait_pca_plot <- ggplot() +
-  geom_point(data=mv_fort_pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
-  geom_text(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=4, alpha=.5) +
-  #geom_text_repel(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=mv_fort_traits, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"))) +
-  geom_text_repel(data=mv_fort_traits, 
-                  aes(x=PC1,y=PC2,label=Label), 
-                  color="red", size=4) +
-  labs(x=paste0("PC1 ","(",100*mv_PCA_eigenvals[2,1],"%)"), y=paste0("PC2 ", "(",100*mv_PCA_eigenvals[2,2],"%)"), title="Millville") +
-  theme_bw() +
-  theme(text = element_text(size = 14))
-
-#png("plots/millville_traits_PCA.png", width=9, height=9, res=300, units="in")
-#millville_trait_pca_plot
+## Species (traits) loadings for first 3 PCs
+#mv_trait_PC_loadings <- round(data.frame(scores(mv_trait_pca_noAppar2, choices=1:3, display = "species", scaling = #0)), digits=3) %>%
+#  arrange(desc(abs(PC1)))
+#mv_trait_PC_loading_cutoff <- sqrt(1/ncol(mv_means_df2)) #.378 is loading of a single variable if each variable #contributed equally; sum of squares of all loadings for an individual principal components must sum to 1. #variables greater than this contribute substantially to a particular PC.
+#mv_PCA_eigenvals <- round(summary(eigenvals(mv_trait_pca_noAppar2))[,1:3], digits = 3)
+#
+#write.csv(rbind(mv_trait_PC_loadings, mv_PCA_eigenvals), "plots/millville_trait_PC_loadings_eigenvals.csv")
+#
+#
+#mv_fort_pops <- fortify(mv_trait_pca_noAppar2, display='sites', scaling=0)
+#mv_fort_traits <- fortify(mv_trait_pca_noAppar2, display='species', scaling=0)
+#
+## PC1 v PC2
+#millville_trait_pca_plot <- ggplot() +
+#  geom_point(data=mv_fort_pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
+#  geom_text(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), hjust=0, vjust=0, size=4, alpha=.5) +
+#  #geom_text_repel(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
+#  geom_segment(data=mv_fort_traits, aes(x=0, xend=PC1, y=0, yend=PC2), 
+#               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"))) +
+#  geom_text_repel(data=mv_fort_traits, 
+#                  aes(x=PC1,y=PC2,label=Label), 
+#                  color="red", size=4) +
+#  labs(x=paste0("PC1 ","(",100*mv_PCA_eigenvals[2,1],"%)"), y=paste0("PC2 ", "(",100*mv_PCA_eigenvals[2,2],"%)"), #title="Millville") +
+#  theme_bw() +
+#  theme(text = element_text(size = 14))
+#
+##png("plots/millville_traits_PCA.png", width=9, height=9, res=300, units="in")
+##millville_trait_pca_plot
+##dev.off()
+#
+## PC2 v PC3
+#millville_trait_pca_plot2 <- ggplot() +
+#  geom_point(data=mv_fort_pops, aes(x = PC2, y = PC3), size=2, alpha=0.5) +
+#  geom_text(data=mv_fort_pops, aes(x = PC2, y = PC3, label=Label), hjust=0, vjust=0, size=4, alpha=.5) +
+#  #geom_text_repel(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
+#  geom_segment(data=mv_fort_traits, aes(x=0, xend=PC2, y=0, yend=PC3), 
+#               color="red", alpha=0.75, arrow=arrow(length=unit(0.01,"npc"))) +
+#  geom_text_repel(data=mv_fort_traits, 
+#                  aes(x=PC2,y=PC3,label=Label), 
+#                  color="red", size=4) +
+#  labs(x=paste0("PC2 ","(",100*mv_PCA_eigenvals[2,2],"%)"), y=paste0("PC3 ", "(",100*mv_PCA_eigenvals[2,3],"%)"), #title="Millville") +
+#  theme_bw() +
+#  theme(text = element_text(size = 14))
+#
+## ggvegan version
+##autoplot(mv_trait_pca_noAppar2, arrows = TRUE, geom = "text", legend = "none") #basic
+#
+## Join Millville and Ephraim plots together
+## library(cowplot)
+#fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels=c("a)","b)"), ncol=1, nrow=2)
+#jpeg("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
+#fig2
 #dev.off()
 
-# PC2 v PC3
-millville_trait_pca_plot2 <- ggplot() +
-  geom_point(data=mv_fort_pops, aes(x = PC2, y = PC3), size=2, alpha=0.5) +
-  geom_text(data=mv_fort_pops, aes(x = PC2, y = PC3, label=Label), hjust=0, vjust=0, size=4, alpha=.5) +
-  #geom_text_repel(data=mv_fort_pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=mv_fort_traits, aes(x=0, xend=PC2, y=0, yend=PC3), 
-               color="red", alpha=0.75, arrow=arrow(length=unit(0.01,"npc"))) +
-  geom_text_repel(data=mv_fort_traits, 
-                  aes(x=PC2,y=PC3,label=Label), 
-                  color="red", size=4) +
-  labs(x=paste0("PC2 ","(",100*mv_PCA_eigenvals[2,2],"%)"), y=paste0("PC3 ", "(",100*mv_PCA_eigenvals[2,3],"%)"), title="Millville") +
-  theme_bw() +
-  theme(text = element_text(size = 14))
-
-# ggvegan version
-#autoplot(mv_trait_pca_noAppar2, arrows = TRUE, geom = "text", legend = "none") #basic
-
-# Join Millville and Ephraim plots together
-# library(cowplot)
-fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels=c("a)","b)"), ncol=1, nrow=2)
-jpeg("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
-fig2
-dev.off()
-
 #### Full RDA (all env predictors and all traits) of accession-level data ####
-mv_means_df2$population <- rownames(mv_means_df2)
+#mv_means_df2$population <- rownames(mv_means_df2)
 #fullRDA_df <- inner_join(mv_pop_trait_means, geo_clim_df) %>%
 #  dplyr::select(-c(Entry,source))
 
@@ -494,8 +515,8 @@ rownames(mv_rda_eigenvals_adj)[1] <- "Eigenvalue"
 write.csv(rbind(mv_rda_trait_loadings, mv_rda_eigenvals_adj), "plots/millville_rda_loadings_eigenvals.csv")
 
 # Plotting
-mv_rda.sp_sc0 <- scores(mv_full_rda, choices = 1:2, scaling=0, display="sp") #scaling 0
-mv_rda.sp_sc1 <- scores(mv_full_rda, choices = 1:2, scaling=1, display="sp") #scaling 1
+#mv_rda.sp_sc0 <- scores(mv_full_rda, choices = 1:2, scaling=0, display="sp") #scaling 0
+#mv_rda.sp_sc1 <- scores(mv_full_rda, choices = 1:2, scaling=1, display="sp") #scaling 1
 mv_rda.sp_sc <- data.frame(scores(mv_full_rda, choices = 1:2, scaling = 0, display="sp"))
 mv_rda.env_sc <- data.frame(scores(mv_full_rda, choices = 1:2, scaling = 0, display = "bp"))
 #mv_mul <- ordiArrowMul(scores(mv_full_rda, choices = 1:2, scaling = 0, display = "bp")) #multiplier for the coordinates of the head of the env vectors such that they fill set proportion of the plot region. This function is used in the default plot() function for rda objects in scaling=2.
@@ -508,24 +529,27 @@ mv_rda.site_sc <- data.frame(scores(mv_full_rda, choices = 1:2, scaling = 0, dis
 #ggveg_rda_traits <- fortify(mv_full_rda, display="species")
 #ggveg_rda_env <- fortify(mv_full_rda, display="bp")
 
+# don't plot plant diameter bc doesn't make loading cutoff
+remove.mv_traits <- c("Plant_diameter")
+mv_rda.sp_sc.filtered <- subset(mv_rda.sp_sc, !rownames(mv_rda.sp_sc) %in% remove.mv_traits) 
 mv_rda_triplotgg <- ggplot() +
   geom_point(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2), size=2, alpha=0.5) +
   #geom_text(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2, label=rownames(mv_2da.site_sc)), hjust=0, vjust=0, size=4, alpha=.5) +
   #geom_text_repel(data=mv_full_rda, aes(x = RDA1, y = RDA2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=mv_rda.sp_sc, aes(x=0, xend=RDA1, y=0, yend=RDA2), 
+  geom_segment(data=mv_rda.sp_sc.filtered, aes(x=0, xend=RDA1, y=0, yend=RDA2), 
                color="red", arrow=arrow(length=unit(.02, "npc"))) +
-  geom_text_repel(data=mv_rda.sp_sc, 
-                  aes(x=RDA1,y=RDA2,label=rownames(mv_rda.sp_sc)), 
+  geom_text_repel(data=mv_rda.sp_sc.filtered, 
+                  aes(x=RDA1,y=RDA2,label=rownames(mv_rda.sp_sc.filtered)), 
                   color="red", size=4) +
   geom_segment(data=mv_rda.env_sc, aes(x=0, xend=RDA1, y=0, yend=RDA2), 
                color="blue", alpha=0.5, arrow=arrow(length=unit(.02,"npc"))) +
   #geom_text_repel(data=mv_rda.env_sc, 
                   #aes(x=RDA1,y=RDA2,label=rownames(mv_rda.env_sc)), 
                   #color="blue", size=4) +
-  annotate("text", x = -.5, y = -.19, label = "Lat", color='blue') +
+  annotate("text", x = -.5, y = -.15, label = "Lat", color='blue') +
   annotate("text", x = .3, y = .54, label = "Temperature", color='blue') +
   annotate("text", x = -.09, y = -.4, label = "Precipitation", color='blue') +
-  annotate("text", x = -.1, y = -.56, label = "Long", color='blue') +
+  annotate("text", x = -.085, y = -.56, label = "Long", color='blue') +
   annotate("text", x = .5, y = -.21, label = "MDR", color='blue') +
   labs(x=paste0("RDA1 ","(",100*mv_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*mv_rda_eigenvals_adj[2,2],"%)"), title="Millville") +
   theme_bw() +
@@ -540,7 +564,7 @@ jpeg("plots/fig3.jpg", width=17, height=23, res=600, units="cm")
 fig3
 dev.off()
 
-# Plot for Supp Mat with all predictor arrows labeled.
+# Plot for Supp Mat with all predictor and response arrows labeled.
 mv_rda_triplotgg_SUPP <- ggplot() +
   geom_point(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2), size=2, alpha=0.5) +
   #geom_text(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2, label=rownames(mv_2da.site_sc)), hjust=0, vjust=0, size=4, alpha=.5) +
@@ -653,7 +677,8 @@ showvarparts(2)
 # Use scaled/centered population means as used in PCA?
 # 
 library(ggcorrplot)
-mv_trait_corr_df <- mv_means_df2[-2,] #exclude Appar bc different species
+mv_trait_corr_df <- mv_means_df2[-33,] %>%
+  dplyr::select(!population) #exclude Appar bc different species
 
 scaled_mv_trait_corr <- scale(mv_trait_corr_df, center = T, scale = T)
 
@@ -661,17 +686,22 @@ mv_corr_mat <- round(cor(mv_trait_corr_df, method=c("pearson"), use = "complete.
 
 mv_p_mat <- cor_pmat(mv_trait_corr_df)
 head(mv_p_mat)
-quartz()
-mv_corr_plot <- ggcorrplot(mv_corr_mat, hc.order = TRUE,type = "lower", lab = TRUE, p.mat=mv_p_mat, insig = "blank", lab_size = 4, tl.cex = 10, show.legend = FALSE, title = "Millville") + #Using default sig level of .05
-  theme(text = element_text(size = 14))
+mv_corr_plot <- ggcorrplot(mv_corr_mat, hc.order = TRUE,type = "lower", lab = TRUE, p.mat=mv_p_mat, insig = "blank", lab_size = 4, tl.cex = 10, show.legend = F, title = "**a)** Millville", legend.title = "*r*") + #Using default sig level of .05
+  theme(text = element_text(size = 14)) +
+  theme(plot.title = ggtext::element_markdown()) +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm")) +
+  theme(legend.title = ggtext::element_markdown())
+  
+
 
 jpeg("plots/millville_trait_corrplot.jpg", width=17, height=10, res=600, units="cm")
 mv_corr_plot
 dev.off()
 
-both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, ncol=1, nrow=2)
+both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, ncol=2, nrow=1) +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
 
-jpeg("plots/corr_plots.jpg", width=17, height=23, res=600, units="cm")
+jpeg("plots/both_corr_plots.jpg", width=23, height=17, res=600, units="cm")
 both_corr_plots
 dev.off()
 

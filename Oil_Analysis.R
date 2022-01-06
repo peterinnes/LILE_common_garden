@@ -72,10 +72,11 @@ oil_comp_df_long <- pivot_longer(oil_comp_df, names_to = "Fatty_acid", values_to
 # FIG4. stacked bar graph with accessions ordered by latitude. Composition is percentage by weight of total fatty acids
 oil_comp_plot <- oil_comp_df_long %>% ggplot(aes(x=reorder(population, Lat), y=Composition, fill=Fatty_acid)) +
   geom_bar(stat="identity") +
-  theme(axis.text.x = element_text(angle = 90, vjust=0.5)) +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, size = 10)) +
   labs(x="Accession", y="Fatty acid composition (g/kg)",fill="Fatty acid") +
   theme(text = element_text(size=14), legend.title = element_blank()) +
-  scale_fill_manual(values = colorschemes$DarkRedtoBlue.12[c(1,3,5,9,11)])
+  scale_fill_manual(values = colorschemes$DarkRedtoBlue.12[c(1,3,5,9,11)]) +
+  theme(legend.key.size = unit(.5, "cm"))
 oil_comp_plot
 
 jpeg("plots/oil_composition_plot.png", width = 17, height = 10, res = 600, units = "cm")
@@ -120,58 +121,56 @@ oil_cont_emm_plot <- plot(emm_oil_cont, type = "response", comparisons = T, colo
 # Get emms, clds, for table
 #### Gather and plot ls-means of all traits. Confidence intervals taken from the lsmeans() aka emmeans() function of package emmeans ####
 oil_fit_list <- list(fit_oil_cont, fit_ala, fit_linoleic, fit_oleic, fit_palmitic, fit_stearic)
-oil_trait_list <- c("Oil_content", "Alphalinolenic", "Linoleic", "Oleic", "Palmitic", "Stearic")
+oil_trait_list <- c("Oil_content", "ALA", "Linoleic", "Oleic", "Palmitic", "Stearic")
 
-oil_results <- list() #list to store means and confidence intervals
-oil_results_cld <- list() ##list to store back-trasnformed means and confidence intervals 
+#oil_results <- list() #list to store means and confidence intervals
+oil_results_cld <- list() ##list to store means with compact letter displays
 #oil_esp_list <- list() #list to store effect size plots
-oil_emm_list <- list() #list to store emm plot
+#oil_emm_list <- list() #list to store emm plot
 #cld_list <- list() #list to store compact letter displays of each model
 
 for (i in 1:length(oil_fit_list) ){
   
   fit <- oil_fit_list[[i]]
-  lsmeans <- as.data.frame(lsmeans(fit, "population")) #as data frame
-  emm1 <- lsmeans(fit, "population") #same as lsmeans above but dont convert to df
-  emm2 <- as.data.frame(lsmeans(fit, "population", type="response")) #separate object for backtransformed lsmeans
+  #lsmeans <- as.data.frame(lsmeans(fit, "population")) #as data frame
+  #emm1 <- lsmeans(fit, "population") #same as lsmeans above but dont convert to df
   
-  # Plotting means and CIs with emmeans:::plot.emmGrid. in order to reorder the populations on y-axis, we need to edit the .plot.srg function in emmeans package:
-  # trace(emmeans:::.plot.srg, edit=T). Edit lines 239-240, change aes_() to aes() and delete tilde from in front of x and y variables. Then use reorder() on the y variable.
-  emm_plot <- plot(emm1, type = "response", comparisons = T, colors = c("salmon", "blue", "black")) +
-    theme_minimal() +
-    xlab(oil_trait_list[i]) +
-    ylab("")
-  oil_emm_list[[i]] <- emm_plot #store plot
+  ## Plotting means and CIs with emmeans:::plot.emmGrid. in order to reorder the populations on y-axis, we need to edit the .plot.s#rg function in emmeans package:
+  ## trace(emmeans:::.plot.srg, edit=T). Edit lines 239-240, change aes_() to aes() and delete tilde from in front of x and y va#riables. Then use reorder() on the y variable.
+  #emm_plot <- plot(emm1, type = "response", comparisons = T, colors = c("salmon", "blue", "black")) +
+  #  theme_minimal() +
+  #  xlab(oil_trait_list[i]) +
+  #  ylab("")
+  #oil_emm_list[[i]] <- emm_plot #store plot
   
   # Compact letter display
   contrasts <- emmeans::emmeans(object=fit, type="response", pairwise ~ "population", adjust="tukey") #tests are on transformed scale but display on response scale
-  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=F)
+  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=T)
   cld_df <- data.frame(cld)
   cld_df[c(2:6)] <- apply(cld_df[c(2:6)], 1:2, function(x) signif(x,3))
   cld_df$emm_letter <- apply(cld_df[c(2,7)], 1, paste, collapse="") #combine emmeans and letters into single column
   
   # Renaming columns and storing results
-  names(lsmeans)[2] <- oil_trait_list[[i]] #Change 'lsmean' column name to trait name before storing in results
-  oil_results[[i]] <- lsmeans #store means and confidence intervals
-  lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort descending trait value to make more readable
+  #names(lsmeans)[2] <- oil_trait_list[[i]] #Change 'lsmean' column name to trait name before storing in results
+  #oil_results[[i]] <- lsmeans #store means and confidence intervals
+  #lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort descending trait value to make more readable
   # Same thing but with emms and clds together. This will be results table in manuscript.
   names(cld_df)[8] <- oil_trait_list[[i]] 
   oil_results_cld[[i]] <- cld_df
-  #emm2 <- emm2 %>% arrange(-emm2[2]) 
 }
-names(oil_results) <- oil_trait_list
+#names(oil_results) <- oil_trait_list
 names(oil_results_cld) <- oil_trait_list
 
 # store emms in one dataframe with population as rowname
-oil_means_df <- data.frame(matrix(ncol = length(oil_trait_list), nrow = length(oil_results[[1]]$population)))
+oil_means_df <- data.frame(matrix(ncol = length(oil_trait_list), nrow = length(oil_results_cld  [[1]]$population)))
 names(oil_means_df) <- oil_trait_list
-rownames(oil_means_df) <- oil_results[[1]]$population
+rownames(oil_means_df) <- oil_results_cld[[1]]$population
 for (i in 1:length(oil_trait_list) ){
-  oil_means_df[i]  <- oil_results[[i]][2]
+  oil_means_df[i]  <- oil_results_cld[[i]][2]
 }
 
 # Store emms with clds in dataframe with column for population. this will be table in manuscript.
-oil_means_df2 <- data.frame(matrix(ncol = length(oil_trait_list), nrow = length(oil_results[[1]]$population)))
+oil_means_df2 <- data.frame(matrix(ncol = length(oil_trait_list), nrow = length(oil_results_cld[[1]]$population)))
 names(oil_means_df2) <- oil_trait_list
 rownames(oil_means_df2) <- oil_results_cld[[1]]$population
 for (i in 1:length(oil_trait_list) ){

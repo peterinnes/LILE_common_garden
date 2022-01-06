@@ -15,6 +15,8 @@ library(ggpubr)
 library(lme4)
 library(lmerTest)
 library(emmeans)
+library(multcomp)
+library(multcompView)
 #library(glmmTMB)
 #library(DHARMa)
 #library(modelsummary)
@@ -25,6 +27,11 @@ library(reshape2)
 #library(arm) #for se.ranef()
 library(vegan)
 library(ggvegan)
+library(climatedata)
+library(raster)
+library(sp)
+library(rgdal)
+
 
 options(contrasts = c("contr.sum","contr.poly"))
 #### Read in the data ####
@@ -66,6 +73,7 @@ geo_data <- env_data %>% dplyr::select(source,population,Lat,Long,Elev_m) %>%
 #### DOWNLOAD climate data from the CHELSA database ####
 # CHELSA has the bioclim data at high resolution (30 arc sec, ~1km()
 BioClim_codes <- read.csv("BioClim_codes.csv") #this file matches the vague bioclim codes (e.g. bio01) with actual descriptions (e.g. Mean Annual Temp)
+
 chelsa <- get_chelsa(type = "bioclim", layer = 1:19, period = c("current"))
 
 coords <- data.frame(Long=geo_data$Long, Lat=geo_data$Lat,
@@ -121,7 +129,7 @@ qqnorm(resid(fit_log_EST_ttl_caps))
 
 #fit_log_EST_ttl_caps2 <- lmer(log(EST_ttl_caps) ~ (1|population) + (1|block) + (1|population:block:plant), data=stem_data)
 
-#' 5. Indeterminancy index (ratio of buds and flowers per plant to capsules per plant). per-plant=per 20 stems. square-root transform. 
+#' 5. Indeterminacy index (ratio of remaining buds and flowers per plant to harvested capsules per plant). per-plant=per 20 stems. square-root transform. 
 stem_data_DI <- stem_data %>%
   group_by(population, block, row, plant) %>% 
   na.omit() %>%
@@ -168,11 +176,13 @@ qqnorm(resid(fit_log_fecundity))
 #' 11. Height
 fit_eph_height <- lmer(Height ~ population + (1|Block) + (1|population:Block), data=eph_ht_rust)
 
+#' 12. Rust
 fit_rust <- lmer(Rust_17th ~ population + (1:Block) + (1|population:Block), data=eph_ht_rust)
 
+
 #### Model DIAGNOSTICS ####
-eph_fit_list <- c(fit_sd_wt, fit_capsd, fit_ff, fit_num_stems, fit_stemd, fit_log_EST_ttl_caps, fit_sqr_DI, fit_sqr_forks, fit_log_yield, fit_log_fecundity, fit_eph_height)
-eph_trait_list <- c("Seed_weight", "Capsule_diam", "Capsule_fill", "Stems_per_plant","Stem_diam", "Est_Capsules_per_stem", "Indeterminancy_index", "Forks_per_stem", "Est_yield", "Est_fecundity", "Height")
+eph_fit_list <- c(fit_sd_wt, fit_capsd, fit_ff, fit_num_stems, fit_stemd, fit_log_EST_ttl_caps, fit_sqr_DI, fit_sqr_forks, fit_log_yield, fit_log_fecundity, fit_eph_height, fit_rust)
+eph_trait_list <- c("seed_mass", "Capsule_diam", "Capsule_fill", "Stems_per_plant","Stem_diam", "Est_Capsules_per_stem", "Indeterminacy_index", "Forks_per_stem", "Est_yield", "Est_fecundity", "Height", "Rust_presence")
 fvr_list <- list()
 qqp_list <- list()
 hist_list <- list()
@@ -265,91 +275,123 @@ ly_resid <- data.frame(resid=resid(fit_log_yield))
 ggplot(data=ly_resid, aes(x=resid, y=stat(density))) +
   geom_histogram(bins = 50) #gets rid of the right-skew.
 
-#### Summarize ls-means of all (non-oil) traits  ####
-eph_fit_list <- c(fit_sd_wt, fit_capsd, fit_ff, fit_num_stems, fit_stemd, fit_log_EST_ttl_caps, fit_sqr_DI, fit_sqr_forks, fit_log_yield, fit_log_fecundity, fit_eph_height, fit_eph_height)
-eph_trait_list <- c("Seed_weight", "Capsule_diam", "Capsule_fill", "Stems_per_plant","Stem_diam", "Est_Capsules_per_stem", "Indeterminancy_index", "Forks_per_stem", "Est_yield", "Est_fecundity", "Height", "Rust_level")
-eph_results <- list() #list to store means and confidence intervals
-eph_results_bt <- list()
-eph_emm_list <- list() #list to store comparison plots
-#eph_esp_list <- list() #list to store effect size plots 
+#### Summarize em-means of all 12 (non-oil) Ephraim traits  ####
+eph_fit_list <- c(fit_sd_wt, fit_capsd, fit_ff, fit_num_stems, fit_stemd, fit_log_EST_ttl_caps, fit_sqr_DI, fit_sqr_forks, fit_log_yield, fit_log_fecundity, fit_eph_height, fit_rust)
+eph_trait_list <- c("Seed_mass", "Capsule_diam", "Capsule_fill", "Stems_per_plant","Stem_diam", "est_Capsules_per_stem", "Indeterminacy_index", "Forks_per_stem", "est_Yield", "est_Fecundity", "Height", "Rust_presence")
+#eph_results <- list() #list to store means and confidence intervals
+eph_results_bt <- list() #list to store back transformed means, etc
+#eph_emm_list <- list() #list to store comparison plots
 emm_options(pbkrtest.limit = 5565) #need to increase mem usage limit. could take a while
 
 for (i in 1:length(eph_fit_list) ){
  
   fit <- eph_fit_list[[i]]
-  lsmeans <- as.data.frame(lsmeans(fit, "population")) #as data frame
-  emm1 <- lsmeans(fit, "population") #same as lsmeans above but dont convert to df
-  emm2 <- as.data.frame(lsmeans(fit, "population", type="response")) #separate object for backtransformed lsmeans
+  #lsmeans <- as.data.frame(emmeans(fit, "population")) #as data frame
+  #emm1 <- emmeans(fit, "population") #same as lsmeans above but dont convert to df
+  #emm2 <- as.data.frame(emmeans(fit, "population", type="response")) #separate object for backtransformed lsmeans
   
-  # Plotting means and CIs with emmeans:::plot.emmGrid. in order to reorder the populations on y-axis, we need to edit the .plot.srg function in emmeans package:
-  # trace(emmeans:::.plot.srg, edit=T). Edit lines 239-240, change aes_() to aes() and delete tilde from in front of x and y variables. Then use reorder() on the y variable as such: y = reorder(pri.fac, the.emmean).
-  emm_plot <- plot(emm1, type = "response", comparisons = T, colors = c("salmon", "blue", "black")) +
-    theme_minimal() +
-    xlab(eph_trait_list[i]) +
-    ylab("")
-  eph_emm_list[[i]] <- emm_plot #store plot
+  #Plotting means and CIs with emmeans:::plot.emmGrid. in order to reorder the populations on y-axis, we need to edit the .plot.srg function in emmeans package:
+  #trace(emmeans:::.plot.srg, edit=T). Edit lines 239-240, change aes_() to aes() and delete tilde from in front of x and y variables. Then use reorder() on the y variable as such: y = reorder(pri.fac, the.emmean).
+  #emm_plot <- plot(emm1, type = "response", comp = T) +
+  # theme_minimal() +
+  # xlab(eph_trait_list[i]) +
+  # ylab("")
+  #eph_emm_list[[i]] <- emm_plot #store plot
   
-  # Compact letter display
+  # Get emmeans and pairwise significance tests (compact letter display)
   contrasts <- emmeans::emmeans(object=fit, type="response", pairwise ~ "population", adjust="tukey")
-  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=F)
+  cld <- emmeans:::cld.emmGrid(object=contrasts$emmeans, Letters=letters, sort=T)
   cld_df <- data.frame(cld)
 
-  # Renaming columns and sorting results  
-  names(lsmeans)[2] <- eph_trait_list[[i]] #Change to actual trait name before storing in results
-  eph_results[[i]] <- lsmeans #store means and confidence intervals
-  lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort by descending trait value to make more readable
+  ## Renaming columns and sorting results  
+  #names(lsmeans)[2] <- eph_trait_list[[i]] #Change to actual trait name before storing in results
+  #eph_results[[i]] <- lsmeans #store means and confidence intervals
+  #lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort by descending trait value to make more readable
+  
   # Same thing but with backtransformed emms and clds. This will be results table 2(?) in manuscript.
   names(cld_df)[2] <- eph_trait_list[[i]] 
   eph_results_bt[[i]] <- cld_df
   #emm2 <- emm2 %>% arrange(-emm2[2])
 }
-names(eph_results) <- eph_trait_list
+#names(eph_results) <- eph_trait_list
 names(eph_results_bt) <- eph_trait_list
 
-# store emms in one dataframe with population as rowname. transformed variables are not back-transformed here.
-eph_means_df <- data.frame(matrix(ncol = length(eph_trait_list), nrow = length(unique(sd_wt_data$population))))
-names(eph_means_df) <- eph_trait_list
-rownames(eph_means_df) <- eph_results[[1]]$population
-for (i in 1:length(eph_trait_list) ){
-  eph_means_df[i]  <- eph_results[[i]][2]
-}
-#eph_means_df <- eph_means_df %>% arrange(desc(Seed_weight)) %>%
+## store emms in one dataframe with population as rowname. transformed variables are not back-transformed here.
+#eph_means_df <- data.frame(matrix(ncol = length(eph_trait_list), nrow = length(unique(sd_wt_data$population))))
+#names(eph_means_df) <- eph_trait_list
+#rownames(eph_means_df) <- eph_results[[1]]$population
+#for (i in 1:length(eph_trait_list) ){
+#  eph_means_df[i]  <- eph_results[[i]][2]
+#}
+#eph_means_df <- eph_means_df %>% arrange(desc(seed_mass)) %>%
   #tibble::rownames_to_column("Accession") %>%
-  #relocate(Accession, .before = Seed_weight)
+  #relocate(Accession, .before = seed_mass)
 #write.csv(eph_means_df, file="plots/millville_trait_means_table.csv", row.names = F)
 
-# dataframe for backtransformed ls-means without clds. for PCA/RDA
+# dataframe for backtransformed ls-means without clds. for PCA/RDA, and Pearson pairwise correlations.
 eph_means_df2 <- data.frame(matrix(ncol = length(eph_trait_list), nrow = length(unique(sd_wt_data$population))))
 names(eph_means_df2) <- eph_trait_list
 rownames(eph_means_df2) <- eph_results_bt[[1]]$population
 for (i in 1:length(eph_trait_list) ){
   eph_means_df2[i] <- eph_results_bt[[i]][2]
 }
-# join with the oil emms
+# join with the oil emms for complete set of Ephraim traits
 eph_means_df2 <- cbind(eph_means_df2, oil_means_df)
+write.csv(eph_means_df2, "data/eph_means_df2.csv") #save the emmeans in order to skip computation above
 
-# Store EMMs with CLDs in dataframe with column for accession/population. This will be for publication. 
-eph_means_df3 <- data.frame(matrix(ncol = length(eph_trait_list), nrow = length(unique(sd_wt_data$population))))
-names(eph_means_df3) <- eph_trait_list
-rownames(eph_means_df3) <- eph_results[[1]]$population
-eph_means_df3 <- eph_means_df3 %>%
-  tibble::rownames_to_column("Accession")
+# Store EMMs with significance letter groupings (CLDs) in dataframe, with column for accession/population. This will be for Supplemental Tables 1-3 in publication 
+eph_means_df3 <- data.frame(Accession=eph_results_bt[[1]]$population) 
 for (i in 1:length(eph_trait_list) ){
-  
   emm_sf <- data.frame(apply(eph_results_bt[[i]][c(2:6)], 1:2,
-                             function(x) signif(x, 3))) %>%
-    mutate(letter_group=eph_results_bt[[i]][7])# change sig figs
-  eph_means_df3[i+1] <- apply(emm_sf[c(1,6)], 1, paste, collapse="") #combine emmeans and letters into single column
+                             function(x) signif(x, 3))) %>% # change sig figs
+    mutate(.group=eph_results_bt[[i]][7], Accession=eph_results_bt[[i]]$population)
   
+  emm_sf <- emm_sf %>% mutate(mean_and_letters=apply(emm_sf[c(1,6)], 1, paste, collapse="")) %>%
+    dplyr::select(c(7,8))
+  names(emm_sf)[2] <- eph_trait_list[i]
+  eph_means_df3 <- full_join(eph_means_df3, emm_sf)
 }
-eph_means_df3 <- eph_means_df3 %>% arrange(desc(Seed_weight))
+eph_means_df3 <- eph_means_df3 %>% arrange(desc(seed_mass))
 #names(eph_means_df3)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
 write.csv(eph_means_df3, "plots/Ephraim_trait_means_table.csv", row.names = F)
 
+# Make and join emm plots together. Figure 2.
+# Function for making y axis of these plots less crowded:
+every_nth = function(n) {
+  return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})
+} 
 
-# Join emm plots together
+focal_fits <- list(fit_sd_wt, fit_log_yield, fit_num_stems, fit_sqr_DI)
+emm_yield <- emmeans(fit_log_yield, "population")
+emm_plot_yield <- plot(emm_yield, type = "response", comp = T) +
+  theme_bw() +
+  xlab("est. Seed yield (g/plant); Ephraim") +
+  ylab("") +
+  theme(text = element_text(size = 14)) +
+  scale_y_discrete(breaks = every_nth(n = 2))
+ 
+emm_DI <- emmeans(fit_sqr_DI, "population")
+emm_plot_DI <- plot(emm_DI, comparisons = T) +
+  xlab("Indeterminacy index; Ephraim") +
+  ylab("") +
+  theme_bw() +
+  theme(text = element_text(size = 14)) +
+  scale_y_discrete(breaks = every_nth(n = 2)) #+
+  #annotate("text", label="More delayed or\nprolonged flowering -->", x=.75, y=4) #+
+ # geom_segment(arrow(length=unit(0.5, "cm")))
+
+emm_stems <- emmeans(fit_num_stems, "population")
+emm_plot_stems <- plot(emm_stems, comparisons = T) +
+  theme_bw() +
+  xlab("Stems per plant; Ephraim") +
+  ylab("") +
+  theme(text = element_text(size = 14)) +
+  scale_y_discrete(breaks = every_nth(n = 2))
+
 eph_emm_list[[1]] <- eph_emm_list[[1]] + ylab("Population") #set y axis labels for these two plots, which are the left most of the two rows, so that we don't have redundant axes. 
 eph_emm_list[[6]] <- eph_emm_list[[6]] + ylab("Population")
+
+focal_eph_emm_list <- list(emm_plot_yield, emm_plot_DI, emm_plot_stems, plot_emm_biomass13)
 
 # Join all the emm plots together
 library(patchwork) #patchwork not working but cowplot is
@@ -361,9 +403,10 @@ library(patchwork) #patchwork not working but cowplot is
 #emm_patchwork <- eph_emm_list[[1]] + eph_emm_list[[2]] + eph_emm_list[[3]] + eph_emm_list[[4]] + eph_emm_list[[5]] + eph_emm_list[[6]] + eph_emm_list[[7]] + eph_emm_list[[8]] + eph_emm_list[[9]] + eph_emm_list[[10]] +
   #plot_layout(design = layout)
 
-eph_emm_grid <- cowplot::plot_grid(plotlist = eph_emm_list, ncol = 3)
+eph_emm_grid <- cowplot::plot_grid(plotlist = focal_eph_emm_list, ncol = 2, labels=c("a)", "b)", "c)", "d)")) +
+  theme(plot.margin = unit(c(.25,0.25,0.25,0.25), "cm"))
 
-png("plots/Ephraim_traits_emm_plots.png", width=12, height=9, res=300, units="in")
+jpeg("plots/Focal_traits_emm_plots.jpg", width=23, height=17, res=600, units="cm")
 eph_emm_grid
 dev.off()
 
@@ -375,7 +418,7 @@ length(which(eph_cvs>10))
 #signif(data.frame(sapply(eph_fit_list, function(x) fixef(x)[1])), 3) #includes Appar which we don't want
 
 # Gather BLUPs/conditional modes (for PCA/RDA?). incl Oil content, ALA, Linoleic, Oleic, Palmitic, Stearic 
-#eph_traits_blups <- c("Seed_weight", "Oil_content", "ALA", "Linoleic", #"Capsule_fill", "Stems_per_plant", "Est_Capsules_per_stem", #"Indeterminancy_index", "Forks_per_stem", "Stem_diam", "Capsule_diam", #"Est_yield", "Est_fecundity")
+#eph_traits_blups <- c("seed_mass", "Oil_content", "ALA", "Linoleic", #"Capsule_fill", "Stems_per_plant", "Est_Capsules_per_stem", #"Indeterminacy_index", "Forks_per_stem", "Stem_diam", "Capsule_diam", #"Est_yield", "Est_fecundity")
 #
 #eph_fit_list_blups <- c(fit_sd_wt2, fit_oil_cont2, fit_ala2, fit_linoleic2, #fit_ff2, fit_num_stems2, fit_log_EST_ttl_caps2, fit_sqr_DI2, fit_sqr_forks2, #fit_stemd2, fit_capsd2, fit_log_yield2, fit_log_fecundity2)
 #
@@ -460,7 +503,7 @@ png("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
 fig2
 dev.off()
 
-#### Full RDA (all env predictors and all traits, incl oil content, ALA, linoleic) of accession-level data ####
+#### Full RDA (all env predictors and all traits, incl oil content, ALA, linoleic, etc) of accession-level data ####
 eph_means_df2$population <- rownames(eph_means_df2)
 #eph_rda_means <- eph_means_df2 %>%
   #mutate(Saturated_FA = Stearic + Palmitic, Unsaturated_FA = Alphalinolenic + Linoleic + Oleic) %>%
@@ -468,31 +511,30 @@ eph_means_df2$population <- rownames(eph_means_df2)
 eph_fullRDA_df <- inner_join(eph_means_df2, geo_clim_df) 
 rownames(eph_fullRDA_df) <- eph_fullRDA_df$population
 eph_fullRDA_df <- eph_fullRDA_df %>% dplyr::select(-c(population, source))
-eph_RDA_traits <- eph_fullRDA_df[1:16]
-eph_RDA_preds <- eph_fullRDA_df[17:38]
+eph_RDA_traits <- eph_fullRDA_df[1:18]
+eph_RDA_preds <- eph_fullRDA_df[19:40]
 
 eph_full_rda <- rda(eph_RDA_traits ~ ., data=eph_RDA_preds, scale = T)
 
 # trait loadings
 eph_rda_trait_loadings <- round(data.frame(scores(eph_full_rda, choices=1:4, display = "species", scaling = 0)), digits=3) %>%
   arrange(desc(abs(RDA1)))
-eph_rda_trait_loading_cutoff <- sqrt(1/13) # 13 traits. 0.25
+eph_rda_trait_loading_cutoff <- sqrt(1/18) #=0.2357 (18 traits)
 
 # get env_loadings
 eph_rda_env_loadings <- round(data.frame(scores(eph_full_rda, choices=1:4, display = "bp", scaling = 0)), digits=3) %>% 
   arrange(desc(abs(RDA1)))
-rda_env_loading_cutoff <- sqrt(1/22) #=.213
+#rda_env_loading_cutoff <- sqrt(1/22) #=.213
 write.csv(eph_rda_env_loadings, "plots/Ephraim_rda_env_loadings.csv")
 
 eph_rda_eigenvals <- round(summary(eigenvals(eph_full_rda, model = "constrained"))[,1:4], digits = 3) #constrained by climate
 eph_rda_eigenvals_adj <- round(rbind(eph_rda_eigenvals["Eigenvalue",], data.frame(eph_rda_eigenvals[2:3,]) * RsquareAdj(eph_full_rda)[2]), digits = 3) 
 rownames(eph_rda_eigenvals_adj)[1] <- "Eigenvalue"
-
 # bind trait loadings and eigenvals for table.
 write.csv(rbind(eph_rda_trait_loadings, eph_rda_eigenvals_adj), "plots/Ephraim_rda_loadings_eigenvals.csv")
 
-eph_rda.sp_sc0 <- scores(eph_full_rda, choices = 1:2, scaling=0, display="sp") #scaling 0
-eph_rda.sp_sc1 <- scores(eph_full_rda, choices = 1:2, scaling=1, display="sp") #scaling 1
+#eph_rda.sp_sc0 <- scores(eph_full_rda, choices = 1:2, scaling=0, display="sp") #scaling 0
+#eph_rda.sp_sc1 <- scores(eph_full_rda, choices = 1:2, scaling=1, display="sp") #scaling 1
 eph_rda.sp_sc <- data.frame(scores(eph_full_rda, choices = 1:2, scaling = 0, display="sp")) #scaling 2 is default
 eph_rda.env_sc <- data.frame(scores(eph_full_rda, choices = 1:2, scaling = 0, display = "bp"))
 #eph_mul <- ordiArrowMul(scores(eph_full_rda, choices = 1:2, scaling = 2, display = "bp")) #multiplier for the coordinates of the head of the env vectors such that they fill set proportion of the plot region. This function is used in the default plot() function for rda objects. value is 3.297
@@ -502,24 +544,29 @@ eph_rda.env_sc <- data.frame(scores(eph_full_rda, choices = 1:2, scaling = 0, di
 eph_rda.site_sc <- data.frame(scores(eph_full_rda, choices = 1:2, scaling = 0, display = "wa"))
 
 # RDA PLOTS
+remove.eph_traits <- c("Stem_diam", "Capsule_fill", "Oleic")
+eph_rda.sp_sc.filtered <- subset(eph_rda.sp_sc, !rownames(eph_rda.sp_sc) %in% remove.eph_traits) 
+
 eph_rda_triplotgg <- ggplot() +
   geom_point(data=eph_rda.site_sc, aes(x = RDA1, y = RDA2), size=2, alpha=0.5) +
   #geom_text(data=eph_rda.site_sc, aes(x = RDA1, y = RDA2, label=rownames(eph_rda.site_sc)), hjust=0, vjust=0, size=4, alpha=.5) +
   #geom_text_repel(data=eph_full_rda, aes(x = RDA1, y = RDA2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=eph_rda.sp_sc, aes(x=0, xend=RDA1, y=0, yend=RDA2), 
+  geom_segment(data=eph_rda.sp_sc.filtered, aes(x=0, xend=RDA1, y=0, yend=RDA2), 
                color="red", arrow=arrow(length=unit(.02, "npc"))) +
-  geom_text_repel(data=eph_rda.sp_sc, 
-                  aes(x=RDA1,y=RDA2,label=rownames(eph_rda.sp_sc)), 
+  geom_text_repel(data=eph_rda.sp_sc.filtered, 
+                  aes(x=RDA1,y=RDA2,label=rownames(eph_rda.sp_sc.filtered)), 
                   color="red", size=4) +
   geom_segment(data=eph_rda.env_sc, aes(x=0, xend=RDA1, y=0, yend=RDA2),
                alpha=0.5, color="blue", arrow=arrow(length=unit(.02,"npc"))) +
   #geom_text_repel(data=eph_rda.env_sc, 
                   #aes(x=RDA1,y=RDA2,label=rownames(eph_rda.env_sc)), 
                   #color="blue", size=4) +
-  #annotate("text", x = -.6, y = .3, label = "Lat", color='blue') +
-  #annotate("text", x = .25, y = -.5, label = "Temperature", color='blue') +
-  #annotate("text", x = -.05, y = .55, label = "Precip", color='blue') +
-  #annotate("text", x = .6, y = .05, label = "MDR", color='blue') +
+  annotate("text", x = -.675, y = -.235, label = "Lat", color='blue') +
+  annotate("text", x = .325, y = .475, label = "Temperature", color='blue') +
+  annotate("text", x = -.125, y = -.435, label = "Precipitation", color='blue') +
+  annotate("text", x = .6, y = -.1, label = "MDR", color='blue') +
+  annotate("text", x = -.035, y = .475, label = "bio04", color = "blue") +
+  annotate("text", x = -.15, y = .475, label = "bio08", color = "blue" ) +
   labs(x=paste0("RDA1 ","(",100*eph_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*eph_rda_eigenvals_adj[2,2],"%)"), title="Ephraim") +
   theme(axis.text=element_text(size=12),axis.title = element_text(size=16)) +
   #geom_hline(yintercept = 0, lty=2, alpha=0.5) +
@@ -531,7 +578,7 @@ eph_rda_triplotgg
 
 # combine with Milville RDA (code for Milville plot is in separate file)
 fig3 <- plot_grid(mv_rda_triplotgg, eph_rda_triplotgg, labels=c("a)","b)"), ncol=1, nrow=2)
-jpeg("plots/fig3.jpg", width=17, height=23, res=600, units="cm")
+jpeg("plots/fig3_revisions.jpg", width=17, height=23, res=600, units="cm")
 fig3
 dev.off()
 
@@ -550,10 +597,6 @@ eph_rda_triplotgg_SUPP <- ggplot() +
   geom_text_repel(data=eph_rda.env_sc, 
   aes(x=RDA1,y=RDA2,label=rownames(eph_rda.env_sc)), 
   color="blue", size=4, alpha=0.5) +
-  #annotate("text", x = -.6, y = .3, label = "Lat", color='blue') +
-  #annotate("text", x = .25, y = -.5, label = "Temperature", color='blue') +
-  #annotate("text", x = -.05, y = .55, label = "Precip", color='blue') +
-  #annotate("text", x = .6, y = .05, label = "MDR", color='blue') +
   labs(x=paste0("RDA1 ","(",100*eph_rda_eigenvals_adj[2,1],"%)"), y=paste0("RDA2 ", "(",100*eph_rda_eigenvals_adj[2,2],"%)"), title="Ephraim") +
   theme(axis.text=element_text(size=12),axis.title = element_text(size=16)) +
   #geom_hline(yintercept = 0, lty=2, alpha=0.5) +
@@ -693,17 +736,18 @@ showvarparts(2)
 
 #### Trait pairwise Pearson correlations ####
 # performed with population trait means from above, scaled and centered
-pop_trait_means <- data.frame(population=results[[1]]$population)
-for ( i in 1:length(results) ){
-  pop_trait_means <- cbind(pop_trait_means, results[[i]][2]) #add trait means to growing df
-}
-head(pop_trait_means)
+#pop_trait_means <- data.frame(population=results[[1]]$population)
+#for ( i in 1:length(results) ){
+#  pop_trait_means <- cbind(pop_trait_means, results[[i]][2]) #add trait means to growing df
+#}
+#head(pop_trait_means)
 
 #write.csv(pop_trait_means, file="data/ephraim_pop_trait_means.csv", row.names = FALSE) #save df
 # using the ggcorrplot package
 
 library(ggcorrplot)
-eph_trait_corr_df <- eph_means_df2[-2,] #exclude Appar bc different species
+eph_trait_corr_df <- eph_means_df2[-2,] %>%
+  dplyr::select(!population) #exclude Appar bc different species
 
 scaled_eph_trait_corr_df <- scale(eph_trait_corr_df, center = T, scale = T)
 
@@ -712,16 +756,19 @@ eph_corr_mat <- round(cor(scaled_eph_trait_corr_df, method=c("pearson"), use = "
 eph_p_mat <- cor_pmat(scaled_eph_trait_corr_df)
 head(eph_p_mat)
 quartz()
-eph_corr_plot <- ggcorrplot(eph_corr_mat, hc.order = TRUE,type = "lower", lab = TRUE, p.mat=eph_p_mat, insig = "blank", lab_size = 4, tl.cex = 10, show.legend = FALSE, title = "Ephraim") + #Using default sig level of .05
-  theme(text = element_text(size = 14))
+eph_corr_plot <- ggcorrplot(eph_corr_mat, hc.order = TRUE, type = "lower", lab = TRUE, p.mat=eph_p_mat, insig = "blank", lab_size = 2, tl.cex = 10, show.legend = F, title = "**b)** Ephraim", legend.title = "*r*" ) + #Using default sig level of .05
+  theme(text = element_text(size = 14)) +
+  theme(legend.title = ggtext::element_markdown(), plot.title = ggtext::element_markdown()) +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
 
 jpeg("plots/ephraim_trait_corrplot.jpg", width=17, height=23, res=600, units="cm")
 eph_corr_plot
 dev.off()
 
-both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, labels=c("a)","b)"), ncol=2, nrow=1)
+both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, ncol=2, nrow=1) +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
 
-jpeg("plots/corr_plots.jpg", width=17, height=17, res=600, units="cm")
+jpeg("plots/both_corr_plots.jpg", width=23, height=17, res=600, units="cm")
 both_corr_plots
 dev.off()
 
@@ -730,7 +777,7 @@ get_upper_tri <- function(corr_mat){ # Get upper triangle of the correlation mat
   corr_mat[lower.tri(corr_mat)]<- NA
   return(corr_mat)
 }
-upper_tri <- get_upper_tri(corr_mat)
+upper_tri <- get_upper_tri(eph_corr_mat)
 melted_corr_mat <- melt(upper_tri)
 ggplot(data = melted_corr_mat, aes(Var2, Var1, fill = value))+
   geom_tile(color = "white")+
@@ -746,18 +793,21 @@ coord_fixed()
 
 #### Misc plots ####
 # Seed weight vs fecundity
-sw_f_df <- dplyr::select(eph_means_df2, Seed_weight, Est_fecundity) %>%
+sw_f_df <- dplyr::select(eph_means_df2, Seed_mass, est_Fecundity) %>%
   tibble::rownames_to_column("Accession") %>%
-  mutate(Species=ifelse(Accession=="Appar", 'L. perenne (\'Appar\')', 'L. lewisii'))
+  mutate(Species=ifelse(Accession=="Appar", "*L. perenne* (\'Appar\')", '*L. lewisii*')) %>%
+  mutate(mg_sw=Seed_mass*1000)
 
-plot(eph_means_df2$Seed_weight, eph_means_df2$Est_fecundity)
-fecund_vs_sw <- ggplot(aes(x=Seed_weight, y=Est_fecundity, color=Species), data=sw_f_df) +
+#plot(eph_means_df2$Seed_mass, eph_means_df2$est_Fecundity)
+fecund_vs_sw <- ggplot(aes(x=mg_sw, y=est_Fecundity, color=Species, shape=Species), data=sw_f_df) +
   geom_point(size=3) +
-  labs(x="Seed weight (g /50 seeds)", y="Est. fecundity (seeds per plant)") +
+  labs(x="Seed mass (mg per 50 seeds)", y="est. Fecundity (seeds per plant)") +
   theme_bw() +
   theme(legend.title=element_blank()) +
   theme(legend.position = c(.75,.75)) +
-  theme(text = element_text(size = 14))
+  theme(text = element_text(size = 14)) +
+  geom_smooth(data=dplyr::filter(sw_f_df, Species!="L. perenne"), method="lm") +
+  theme(legend.text = ggtext::element_markdown())
 
 
 
