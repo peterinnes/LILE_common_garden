@@ -58,7 +58,7 @@ stem_data <- stem_data %>%
 write.csv(stem_data, file = "data/stem_data.csv", row.names = FALSE)
 stems <- stem_data %>% dplyr::select(source,population,trt,block,row,plot,plant,num_of_stems) %>% unique()
 
-stem_data_DI <- stem_data %>% #determinancy index
+stem_data_DI <- stem_data %>% #indeterminacy index
   group_by(population, block, row, plant) %>% 
   na.omit() %>%
   summarise(ttl_caps=sum(fruits), ttl_bds_flow=sum(bds_flow)) %>%
@@ -99,15 +99,15 @@ yield_df <- full_join(yield_df,c)
 yield_df <- full_join(yield_df,d)
 head(yield_df)
 dim(yield_df)
-#' Next, impute missing seed weight values so that we can estimate yield for plants that have trait data for everything except seed weight: use the mean seed weight from all other plots of its population.
+#' Next, impute missing seed weight values so that we can estimate yield for plants that have trait data for everything except seed weight: use the mean seed weight from all other plots of its population (accession).
 for ( i in 1:281 ){ #last 100 entries in yield df have missing data so we skip them
-  pop <- yield_df$population[i]
+  pop <- yield_df$population[i] #population of current plant
   pop_mn <- yield_df %>% filter(population==pop) %>% 
     dplyr::select(source,row,plot,sd_wt_50_ct) %>%
     unique() %>%
-    summarise(mean(na.omit(sd_wt_50_ct)))
+    summarise(mean(na.omit(sd_wt_50_ct))) #calculate mean seed mass of the population that current plant belongs to
   pop_mn %<>% as.numeric()
-  if( is.na(yield_df$sd_wt_50_ct[i]) ){
+  if( is.na(yield_df$sd_wt_50_ct[i]) ){ #if plant has mising seed mass value, replace it with population mean
     print(yield_df[i,])
     yield_df$sd_wt_50_ct[i] <- pop_mn
   }

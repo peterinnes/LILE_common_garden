@@ -94,7 +94,7 @@ ephraim_value <- data.frame(raster::extract(chelsa, ephraim_point)) #previously 
 colnames(ephraim_value) <- lapply(colnames(ephraim_value), gsub, pattern = "CHELSA_bio10_", replacement = "bio") #simplify column names
 
 ephraim_clim <- cbind.data.frame(ephraim_coords, ephraim_value) %>%
-  mutate(source="ephraim_GARDEN", population="ephraim_GARDEN", Elev_m=1407)
+  mutate(source="ephraim_GARDEN", population="ephraim_GARDEN", Elev_m=1686)
 
 env_pca_df <- full_join(geo_clim_df, ephraim_clim)
 env_pca_df <- full_join(env_pca_df, millville_clim)
@@ -116,21 +116,21 @@ env_PC1_loadings <- data.frame(scores(my_env_pca, choices=1, display = "species"
   arrange(desc(abs(PC1))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
-write.csv(env_PC1_loadings, file = "results_summaries/env_PC1_loadings.csv")
+write.csv(env_PC1_loadings, file = "plots/env_PC1_loadings.csv")
 
 env_PC2_loadings <- data.frame(scores(my_env_pca, choices=2, display = "species", scaling = 0)) %>%
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC2))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
-write.csv(env_PC2_loadings, file = "results_summaries/env_PC2_loadings.csv")
+write.csv(env_PC2_loadings, file = "plots/env_PC2_loadings.csv")
 
 env_PC3_loadings <- data.frame(scores(my_env_pca, choices=3, display = "species", scaling=0)) %>% #default is scaling=2 (scale by species) is what the summary() reports
   tibble::rownames_to_column("var") %>%
   arrange(desc(abs(PC3))) %>%
   full_join(dplyr::select(BioClim_codes, var, description)) %>%
   relocate(description, .after = var)
-write.csv(env_PC3_loadings, file = "results_summaries/env_PC3_loadings.csv")
+write.csv(env_PC3_loadings, file = "plots/env_PC3_loadings.csv")
 
 # Using base R, same as vegan RDA above
 my_env_pca <- prcomp(geo_clim_df[3:24], scale = T) 
@@ -210,7 +210,7 @@ mv_trd_plot <- ggplot(data=surv_vs_dist_df, aes(x=pc_trd1, y=Survival)) +
 eph_trd_plot <- ggplot(data=fecund_vs_dist_df, aes(x=pc_trd1, y=Est_fecundity)) +
   geom_point(pch=21, alpha=.75, fill="grey", size=2) +
   #geom_text_repel(aes(label = population), alpha=0.5) +
-  labs(x="Environment PC1 transfer distance", y="Est. fecundity \n (seeds/plant)", title="Ephraim") +
+  labs(x="Environment PC1 transfer distance", y="est. Fecundity \n (seeds/plant)", title="Ephraim") +
   theme_bw() +
   theme(text = element_text(size = 14)) +
   geom_vline(xintercept = 0, lty=2, alpha=0.5)
@@ -224,7 +224,6 @@ figS2
 dev.off()
 
 #### PCA of just climate vars ####
-# Thinking we want use these if we also want to include geographic variables as separate predictors in model selection?
 my_clim_rda <- rda(geo_clim_df[6:24], scale = T)
 
 summary(my_clim_rda)
