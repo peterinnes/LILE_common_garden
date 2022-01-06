@@ -329,12 +329,11 @@ names(eph_results_bt) <- eph_trait_list
 #write.csv(eph_means_df, file="plots/millville_trait_means_table.csv", row.names = F)
 
 # dataframe for backtransformed ls-means without clds. for PCA/RDA, and Pearson pairwise correlations.
-eph_means_df2 <- data.frame(matrix(ncol = length(eph_trait_list), nrow = length(unique(sd_wt_data$population))))
-names(eph_means_df2) <- eph_trait_list
-rownames(eph_means_df2) <- eph_results_bt[[1]]$population
+eph_means_df2 <- data.frame(population=eph_results_bt[[1]]$population) 
 for (i in 1:length(eph_trait_list) ){
-  eph_means_df2[i] <- eph_results_bt[[i]][2]
+  eph_means_df2 <- full_join(eph_means_df2, eph_results_bt[[i]][1:2])
 }
+
 # join with the oil emms for complete set of Ephraim traits
 eph_means_df2 <- cbind(eph_means_df2, oil_means_df)
 write.csv(eph_means_df2, "data/eph_means_df2.csv") #save the emmeans in order to skip computation above
