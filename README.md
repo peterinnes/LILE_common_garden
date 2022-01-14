@@ -7,3 +7,5 @@ Next, analysis of Ephraim non-oil traits, Ephraim oil traits, and Millville trai
 'misc_Env_Analysis.R' contains code for the transfer distance test and the environmental PCA.
 
 'Maps.R' contains code for creation of Figure 1.
+
+All data is stored in the accompanying Dryad repository: https://doi.org/10.5061/dryad.tdz08kq1n
