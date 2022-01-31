@@ -308,7 +308,7 @@ for (i in 1:length(eph_fit_list) ){
   #eph_results[[i]] <- lsmeans #store means and confidence intervals
   #lsmeans <- lsmeans %>% arrange(-lsmeans[2]) #sort by descending trait value to make more readable
   
-  # Same thing but with backtransformed emms and clds. This will be results table 2(?) in manuscript.
+  # Same thing but with backtransformed emms and clds. This will be results table S2 in manuscript.
   names(cld_df)[2] <- eph_trait_list[[i]] 
   eph_results_bt[[i]] <- cld_df
   #emm2 <- emm2 %>% arrange(-emm2[2])
@@ -338,7 +338,7 @@ for (i in 1:length(eph_trait_list) ){
 eph_means_df2 <- cbind(eph_means_df2, oil_means_df)
 write.csv(eph_means_df2, "data/eph_means_df2.csv") #save the emmeans in order to skip computation above
 
-# Store EMMs with significance letter groupings (CLDs) in dataframe, with column for accession/population. This will be for Supplemental Tables 1-3 in publication 
+# Store EMMs with significance letter groupings (CLDs) in dataframe, with column for accession/population. This will be for table S2 in publication 
 eph_means_df3 <- data.frame(Accession=eph_results_bt[[1]]$population) 
 for (i in 1:length(eph_trait_list) ){
   emm_sf <- data.frame(apply(eph_results_bt[[i]][c(2:6)], 1:2,
@@ -352,9 +352,10 @@ for (i in 1:length(eph_trait_list) ){
 }
 eph_means_df3 <- eph_means_df3 %>% arrange(desc(seed_mass))
 #names(eph_means_df3)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
+# TABLE S2
 write.csv(eph_means_df3, "plots/Ephraim_trait_means_table.csv", row.names = F)
 
-# Make and join emm plots together. Figure 2.
+# Make and join emm plots together. Fig 2.
 # Function for making y axis of these plots less crowded:
 every_nth = function(n) {
   return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})
@@ -405,6 +406,7 @@ library(patchwork) #patchwork not working but cowplot is
 eph_emm_grid <- cowplot::plot_grid(plotlist = focal_eph_emm_list, ncol = 2, labels=c("a)", "b)", "c)", "d)")) +
   theme(plot.margin = unit(c(.25,0.25,0.25,0.25), "cm"))
 
+# FIG 2
 jpeg("plots/Focal_traits_emm_plots.jpg", width=23, height=17, res=600, units="cm")
 eph_emm_grid
 dev.off()
@@ -431,76 +433,76 @@ length(which(eph_cvs>10))
 #}
 #rownames(eph_blup_df) <- rownames(blups)
 
-#### Trait PCA of accession level means (emmeans) for ALL traits incl oil content and fatty acid compositions ####
-## with ls-means and source as rownames/labels
-#temp <- pop_trait_means[,-1]
-#rownames(temp) <- pop_trait_means[,1]
-
-#eph_trait_pca <- rda(eph_blup_df, scale = T) #scale everything to unit variance bc different units.
-#eph_trait_pca_noAppar <- rda(eph_blup_df[-2,], scale = T)
-eph_trait_pca_noAppar2 <- rda(eph_means_df2[-2,], scale = T) #PCA with ALL response-scale emmeans, instead of blups. includes all oil traits.
-
-summary(eph_trait_pca_noAppar2)
-biplot(eph_trait_pca_noAppar2)
-
-# Species (traits) loadings.
-eph_trait_PC_loadings <- round(data.frame(scores(eph_trait_pca_noAppar2, choices=1:3, display = "species", scaling = 0)), digits=3) %>%
-  arrange(desc(abs(PC1)))
-eph_trait_PC_loading_cutoff <- sqrt(1/ncol(eph_means_df2)) #loading of a single variable if each variable contributed equally; sum of squares of all loadings for an individual principal components must sum to 1.
-eph_PCA_eigenvals <- round(summary(eigenvals(eph_trait_pca_noAppar2))[,1:3], digits = 3)
-write.csv(rbind(eph_trait_PC_loadings, eph_PCA_eigenvals), "plots/Ephraim_trait_PC_loadings_eigenvals.csv")
-
-
-# Eigenvalue plot
-data.frame(summary(eigenvals(eph_trait_pca_noAppar2)))[2,1:10] %>% 
-  pivot_longer(1:10, names_to = "PC", values_to = "Proportion_Explained") %>%
-  mutate(PC=factor(PC, levels = PC)) %>%
-  # Plot proportion explained
-  ggplot(aes(x=PC, y=Proportion_Explained)) + 
-  geom_col()
-
-# Extract df of PC scores to manually build a plot
-library(ggrepel)
-eph_fort_pops <- fortify(eph_trait_pca_noAppar2, display='sites', scaling=0)
-eph_fort_traits <- fortify(eph_trait_pca_noAppar2, display='species', scaling=0)
-ephraim_trait_pca_plot <- ggplot() +
-  geom_point(data=eph_fort_pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) +
-  geom_text_repel(data=eph_fort_pops, aes(x = PC1, y = PC2, label=Label),size=4, alpha=.5) +
-  #geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=eph_fort_traits, aes(x=0, xend=PC1, y=0, yend=PC2), 
-               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"))) +
-  geom_text_repel(data=eph_fort_traits, 
-                  aes(x=PC1,y=PC2,label=Label), 
-                  color="red", size=4) +
-  theme_bw() +
-  labs(x=paste0("PC1 ","(",100*eph_PCA_eigenvals[2,1],"%)"), y=paste0("PC2 ", "(",100*eph_PCA_eigenvals[2,2],"%)"), title="Ephraim") +
-  theme(text = element_text(size=14))
-
-ephraim_trait_pca_plot2 <- ggplot() +
-  geom_point(data=eph_fort_pops, aes(x = PC2, y = PC3), size=2, alpha=0.5) +
-  geom_text_repel(data=eph_fort_pops, aes(x = PC2, y = PC3, label=Label),size=4, alpha=.5) +
-  #geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, alpha=0.5, max.overlaps = 11) +
-  geom_segment(data=eph_fort_traits, aes(x=0, xend=PC2, y=0, yend=PC3), 
-               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"))) +
-  geom_text_repel(data=eph_fort_traits, 
-                  aes(x=PC2,y=PC3,label=Label), 
-                  color="red", size=4) +
-  theme_bw() +
-  labs(x=paste0("PC2 ","(",100*eph_PCA_eigenvals[2,2],"%)"), y=paste0("PC3 ", "(",100*eph_PCA_eigenvals[2,3],"%)"), title="Ephraim") +
-  theme(text = element_text(size=14))
-
-# ggvegan plot
-autoplot(eph_trait_pca, arrows = TRUE, geom = "text", legend = "none") #basic version
-
-#png("plots/Ephraim_traits_PCA.png", width=9, height=9, res=300, units="in")
-#ephraim_trait_pca_plot
+##### Trait PCA of accession level means (emmeans) for ALL traits incl oil #content and fatty acid compositions ####
+### with ls-means and source as rownames/labels
+##temp <- pop_trait_means[,-1]
+##rownames(temp) <- pop_trait_means[,1]
+#
+##eph_trait_pca <- rda(eph_blup_df, scale = T) #scale everything to unit #variance bc different units.
+##eph_trait_pca_noAppar <- rda(eph_blup_df[-2,], scale = T)
+#eph_trait_pca_noAppar2 <- rda(eph_means_df2[-2,], scale = T) #PCA with ALL #response-scale emmeans, instead of blups. includes all oil traits.
+#
+#summary(eph_trait_pca_noAppar2)
+#biplot(eph_trait_pca_noAppar2)
+#
+## Species (traits) loadings.
+#eph_trait_PC_loadings <- round(data.frame(scores(eph_trait_pca_noAppar2, #choices=1:3, display = "species", scaling = 0)), digits=3) %>%
+#  arrange(desc(abs(PC1)))
+#eph_trait_PC_loading_cutoff <- sqrt(1/ncol(eph_means_df2)) #loading of a #single variable if each variable contributed equally; sum of squares of all #loadings for an individual principal components must sum to 1.
+#eph_PCA_eigenvals <- round(summary(eigenvals(eph_trait_pca_noAppar2))[,1:3]#, digits = 3)
+#write.csv(rbind(eph_trait_PC_loadings, eph_PCA_eigenvals), "plots#/Ephraim_trait_PC_loadings_eigenvals.csv")
+#
+#
+## Eigenvalue plot
+#data.frame(summary(eigenvals(eph_trait_pca_noAppar2)))[2,1:10] %>% 
+#  pivot_longer(1:10, names_to = "PC", values_to = "Proportion_Explained") %#>%
+#  mutate(PC=factor(PC, levels = PC)) %>%
+#  # Plot proportion explained
+#  ggplot(aes(x=PC, y=Proportion_Explained)) + 
+#  geom_col()
+#
+## Extract df of PC scores to manually build a plot
+#library(ggrepel)
+#eph_fort_pops <- fortify(eph_trait_pca_noAppar2, display='sites', scaling=0#)
+#eph_fort_traits <- fortify(eph_trait_pca_noAppar2, display='species', #scaling=0)
+#ephraim_trait_pca_plot <- ggplot() +
+#  geom_point(data=eph_fort_pops, aes(x = PC1, y = PC2), size=2, alpha=0.5) #+
+#  geom_text_repel(data=eph_fort_pops, aes(x = PC1, y = PC2, label=Label#),size=4, alpha=.5) +
+#  #geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, #alpha=0.5, max.overlaps = 11) +
+#  geom_segment(data=eph_fort_traits, aes(x=0, xend=PC1, y=0, yend=PC2), 
+#               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"#))) +
+#  geom_text_repel(data=eph_fort_traits, 
+#                  aes(x=PC1,y=PC2,label=Label), 
+#                  color="red", size=4) +
+#  theme_bw() +
+#  labs(x=paste0("PC1 ","(",100*eph_PCA_eigenvals[2,1],"%)"), y=paste0("PC2 #", "(",100*eph_PCA_eigenvals[2,2],"%)"), title="Ephraim") +
+#  theme(text = element_text(size=14))
+#
+#ephraim_trait_pca_plot2 <- ggplot() +
+#  geom_point(data=eph_fort_pops, aes(x = PC2, y = PC3), size=2, alpha=0.5) #+
+#  geom_text_repel(data=eph_fort_pops, aes(x = PC2, y = PC3, label=Label#),size=4, alpha=.5) +
+#  #geom_text_repel(data=pops, aes(x = PC1, y = PC2, label=Label), size=4, #alpha=0.5, max.overlaps = 11) +
+#  geom_segment(data=eph_fort_traits, aes(x=0, xend=PC2, y=0, yend=PC3), 
+#               color="red", alpha=0.75, arrow=arrow(length=unit(0.02,"npc"#))) +
+#  geom_text_repel(data=eph_fort_traits, 
+#                  aes(x=PC2,y=PC3,label=Label), 
+#                  color="red", size=4) +
+#  theme_bw() +
+#  labs(x=paste0("PC2 ","(",100*eph_PCA_eigenvals[2,2],"%)"), y=paste0("PC3 #", "(",100*eph_PCA_eigenvals[2,3],"%)"), title="Ephraim") +
+#  theme(text = element_text(size=14))
+#
+## ggvegan plot
+#autoplot(eph_trait_pca, arrows = TRUE, geom = "text", legend = "none") ##basic version
+#
+##png("plots/Ephraim_traits_PCA.png", width=9, height=9, res=300, units="in"#)
+##ephraim_trait_pca_plot
+##dev.off()
+#
+## Join Millville and Ephraim plots together
+#fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels#=c("a)","b)"), ncol=1, nrow=2)
+#png("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
+#fig2
 #dev.off()
-
-# Join Millville and Ephraim plots together
-fig2 <- plot_grid(millville_trait_pca_plot, ephraim_trait_pca_plot, labels=c("a)","b)"), ncol=1, nrow=2)
-png("plots/Fig2.jpg", width=17, height = 23, res=600, units = "cm")
-fig2
-dev.off()
 
 #### Full RDA (all env predictors and all traits, incl oil content, ALA, linoleic, etc) of accession-level data ####
 eph_means_df2$population <- rownames(eph_means_df2)
@@ -524,12 +526,13 @@ eph_rda_trait_loading_cutoff <- sqrt(1/18) #=0.2357 (18 traits)
 eph_rda_env_loadings <- round(data.frame(scores(eph_full_rda, choices=1:4, display = "bp", scaling = 0)), digits=3) %>% 
   arrange(desc(abs(RDA1)))
 #rda_env_loading_cutoff <- sqrt(1/22) #=.213
+# TABLE S5
 write.csv(eph_rda_env_loadings, "plots/Ephraim_rda_env_loadings.csv")
 
 eph_rda_eigenvals <- round(summary(eigenvals(eph_full_rda, model = "constrained"))[,1:4], digits = 3) #constrained by climate
 eph_rda_eigenvals_adj <- round(rbind(eph_rda_eigenvals["Eigenvalue",], data.frame(eph_rda_eigenvals[2:3,]) * RsquareAdj(eph_full_rda)[2]), digits = 3) 
 rownames(eph_rda_eigenvals_adj)[1] <- "Eigenvalue"
-# bind trait loadings and eigenvals for table.
+# bind trait loadings and eigenvals for TABLE 3. 
 write.csv(rbind(eph_rda_trait_loadings, eph_rda_eigenvals_adj), "plots/Ephraim_rda_loadings_eigenvals.csv")
 
 #eph_rda.sp_sc0 <- scores(eph_full_rda, choices = 1:2, scaling=0, display="sp") #scaling 0
@@ -576,9 +579,9 @@ eph_rda_triplotgg <- ggplot() +
 eph_rda_triplotgg
 
 # combine with Milville RDA (code for Milville plot is in separate file)
-fig3 <- plot_grid(mv_rda_triplotgg, eph_rda_triplotgg, labels=c("a)","b)"), ncol=1, nrow=2)
-jpeg("plots/fig3_revisions.jpg", width=17, height=23, res=600, units="cm")
-fig3
+fig4 <- plot_grid(mv_rda_triplotgg, eph_rda_triplotgg, labels=c("a)","b)"), ncol=1, nrow=2)
+jpeg("plots/Figure_4_RDA.jpg", width=17, height=23, res=600, units="cm")
+fig4
 dev.off()
 
 # Plot for SUPP mat with labels for every predictor arrow.
@@ -639,9 +642,9 @@ autoplot(eph_full_rda, arrows=FALSE, geom="text", legend= "none", scaling=2)
 ##dev.off()
 #
 #
-#fig3_trimmed <- plot_grid(mv_rda_triplotgg_TRIMMED, eph_rda_triplotgg_TRIMMED, labels=c("a)","b#)"), ncol=1, nrow=2)
+#fig4_trimmed <- plot_grid(mv_rda_triplotgg_TRIMMED, eph_rda_triplotgg_TRIMMED, labels=c("a)","b#)"), ncol=1, nrow=2)
 #
-#jpeg("plots/fig3_TRIMMED.jpg", width=17, height=23, res=600, units="cm")
+#jpeg("plots/fig4_TRIMMED.jpg", width=17, height=23, res=600, units="cm")
 #fig3_trimmed
 #dev.off()
 
@@ -767,6 +770,7 @@ dev.off()
 both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, ncol=2, nrow=1) +
   theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
 
+# Fig S3
 jpeg("plots/both_corr_plots.jpg", width=23, height=17, res=600, units="cm")
 both_corr_plots
 dev.off()
@@ -791,7 +795,7 @@ ggplot(data = melted_corr_mat, aes(Var2, Var1, fill = value))+
 coord_fixed()
 
 #### Misc plots ####
-# Seed weight vs fecundity
+# Seed weight vs fecundity (Fig S1)
 sw_f_df <- dplyr::select(eph_means_df2, Seed_mass, est_Fecundity) %>%
   tibble::rownames_to_column("Accession") %>%
   mutate(Species=ifelse(Accession=="Appar", "*L. perenne* (\'Appar\')", '*L. lewisii*')) %>%
@@ -809,7 +813,7 @@ fecund_vs_sw <- ggplot(aes(x=mg_sw, y=est_Fecundity, color=Species, shape=Specie
   theme(legend.text = ggtext::element_markdown())
 
 
-
+# FIG S1
 jpeg(file="plots/fecund_vs_sw.jpg",
      width=17, height=13, res=600, units="cm")
 fecund_vs_sw

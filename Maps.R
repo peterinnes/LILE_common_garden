@@ -107,7 +107,8 @@ h <- asp2 * w
 
 vp <- viewport(x=.878, y=0.878, width = w, height=h, just=c("right", "top"))
 
-tmap_save(LILE_map_2.0,filename="LILE_map_2.0.jpg",
+# FIG 1
+tmap_save(LILE_map_2.0,filename="Figure_1_collection_map.jpg",
           dpi=600, insets_tm=inset_map, insets_vp=vp,
           height=asp*17, width=17, units="cm")
 

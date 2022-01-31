@@ -13,8 +13,8 @@ library(sjstats)
 #### Oil composition ####
 
 gc_data <- read.csv("data/GC_data/BrantGC/Brant_Flax_GC_Complete.csv", header = T, na.strings = c(".","n.a.")) %>%
-  dplyr::select(Sample.Number, source=Accession, block=Plot, row=Range, BL, Palmitic, Palmitoleic, Stearic, Oleic, Linoleic, Alphalinolenic, Arachidic, Gondoic) 
-gc_data <- gc_data %>% mutate(source=as.factor(source), block=as.factor(block), row=as.factor(row), BL=as.factor(BL)) %>% 
+  dplyr::select(Sample.Number, source=Accession, Plot, row=Range, BL, Palmitic, Palmitoleic, Stearic, Oleic, Linoleic, Alphalinolenic, Arachidic, Gondoic) 
+gc_data <- gc_data %>% mutate(source=as.factor(source), Plot=as.factor(Plot), row=as.factor(row), BL=as.factor(BL)) %>% 
   full_join(dplyr::select(env_data, source, population, Lat, Long)) %>%
   filter(!source %in% c(2,5,22,32,38)) #exclude mistaken Appar collections
 # multiply fatty acid percentages by 10 to convert to grams per kilogram fatty acid
@@ -27,27 +27,18 @@ ala_hist <- ggplot(data=gc_data, aes(x=Alphalinolenic), stat = "identity") +
 gc_data %>% 
   mutate(yjit=jitter(0*Alphalinolenic)) %>%
   ggplot() +
-  geom_point(aes(x=Alphalinolenic, col=block, y=yjit)) +
+  geom_point(aes(x=Alphalinolenic, col=BL, y=yjit)) +
   facet_wrap(facets = ~ source)
 
 # linear models. 
 fit_ala <- lmer(Alphalinolenic ~ population + (1|BL), data=gc_data)
-#fit_ala2 <- lmer(Alphalinolenic ~ (1|population) + (1|block) + (1|population:block), data=gc_data)
-#cbind(coef(fit_ala2)$population, emmeans(fit_ala, specs = "population")) 
+
 
 fit_linoleic <- lmer(Linoleic ~ population + (1|BL), data=gc_data)
-#fit_linoleic2 <- lmer(Linoleic ~ (1|population) + (1|block) + (1|population:block), data=gc_data)
 
 fit_palmitic <- lmer(Palmitic ~ population + (1|BL), data=gc_data)
 fit_stearic <- lmer(Stearic ~ population + (1|BL), data=gc_data)
 fit_oleic <- lmer(Oleic ~ population + (1|BL), data=gc_data)
-
-# 
-#fit_oilComp_Geog <- lmer(Linoleic ~ Lat + Long + (1|population) + (1|block), data=gc_data)
-#summary(fit_oilComp_Geog)
-#anova(fit_oilComp_Geog)
-#plot(fit_oilComp_Geog)
-#coef(fit_oilComp_geog)$population
 
 # get emms
 ala_emm <- data.frame(emmeans(fit_ala, specs = "population")) %>% dplyr::select(population, Alphalinolenic=emmean)
@@ -79,6 +70,7 @@ oil_comp_plot <- oil_comp_df_long %>% ggplot(aes(x=reorder(population, Lat), y=C
   theme(legend.key.size = unit(.5, "cm"))
 oil_comp_plot
 
+# FIG 3
 jpeg("plots/oil_composition_plot.png", width = 17, height = 10, res = 600, units = "cm")
 oil_comp_plot
 dev.off()
@@ -169,7 +161,7 @@ for (i in 1:length(oil_trait_list) ){
   oil_means_df[i]  <- oil_results_cld[[i]][2]
 }
 
-# Store emms with clds in dataframe with column for population. this will be table in manuscript.
+# Store emms with clds in dataframe with column for population. this will be table S3 in manuscript.
 oil_means_df2 <- data.frame(matrix(ncol = length(oil_trait_list), nrow = length(oil_results_cld[[1]]$population)))
 names(oil_means_df2) <- oil_trait_list
 rownames(oil_means_df2) <- oil_results_cld[[1]]$population
@@ -179,6 +171,7 @@ for (i in 1:length(oil_trait_list) ){
 oil_means_df2 <- oil_means_df2 %>% arrange(desc(Oil_content)) %>%
   tibble::rownames_to_column("Accession") %>%
   relocate(Accession, .before = Oil_content)
+# TABLE S3
 write.csv(oil_means_df2, "plots/Oil_means_table.csv", row.names = F)
 
 #### Cet coefficients of variation ####

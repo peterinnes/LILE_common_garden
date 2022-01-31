@@ -64,7 +64,7 @@ head(geo_clim_df)
 #### Stem and capsule data (Capsules per stem, capsules per plant, stems per plant) ####
 # Key to convert Tom 'Entry' number to Stan 'source' number/population ID.
 
-TvS_key <- read.csv("info_from_TomJ/tomJ_data/StanVsTomAccessions.csv", header=T) %>%
+TvS_key <- read.csv("data/StanVsTomAccessions.csv", header=T) %>%
   mutate(source=factor(source), Entry=factor(Entry))
 
 mv_stems_caps <- read.csv("data/TomJ_2013_stems_caps_ht_diam_surv_ANALYZE_THIS.csv", skip=1, na.strings = ".", header = T) %>% #Spreadsheet has two headers. so we gotta skip the first one
@@ -340,9 +340,10 @@ for (i in 1:length(mv_trait_list) ){
 
 mv_means_df3 <- mv_means_df3 %>% arrange(desc(Capsules_per_plot))
 #names(mv_means_df3)[2:8] <- c("Capsules per plot", "Capsules per stem", "Stems per plot", "2013 Biomass per plot (g)", "2014 Biomass per plot (g)", "Plant height (cm)", "Plant diameter (cm)")
+# Table S1
 write.csv(mv_means_df3, "plots/millville_trait_means_table.csv", row.names = F)
 
-# Make emm comparisons plot for 2013 Biomass
+# Make emm comparisons plot for 2013 Biomass. This goes into Fig 2, which is assembled in Ephraim_Analysis.R script.
 # Function for making y axis of these plots less crowded:
 every_nth = function(n) {
   return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})
@@ -371,18 +372,18 @@ for (fit in mv_cv_fit_list) {
 names(mv_cvs) <- mv_trait_list
 
 
-# Trying to figure out how to create a nice table
-library(sjPlot)
-tab_df(mv_means_df3, file="Milville_emms_cld.docx")
-
-library(xtable)
-print(xtable(mv_means_df3))
-library(stargazer)
-stargazer(mv_means_df3, type="text")
-library(printr)
-knitr::kable(mv_means_df3)
-library(pander)
-pander::pander(mv_means_df3)
+## Trying to figure out how to create a nice table
+#library(sjPlot)
+#tab_df(mv_means_df3, file="Milville_emms_cld.docx")
+#
+#library(xtable)
+#print(xtable(mv_means_df3))
+#library(stargazer)
+#stargazer(mv_means_df3, type="text")
+#library(printr)
+#knitr::kable(mv_means_df3)
+#library(pander)
+#pander::pander(mv_means_df3)
 
 # Join emm plots together 
 mv_emm_grid <- cowplot::plot_grid(plotlist = mv_emm_list, ncol = 3) 
@@ -507,11 +508,13 @@ mv_rda_trait_loading_cutoff <- sqrt(1/7) #7 traits. 0.3779645
 mv_rda_env_loadings <- round(data.frame(scores(mv_full_rda, choices=1:4, display = "bp", scaling = 0)), digits=3) %>% 
   arrange(desc(abs(RDA1)))
 #rda_env_loading_cutoff <- sqrt(1/22) #=.213 this is not how to assess importance of env loadings.
+# TABLE S4
 write.csv(mv_rda_env_loadings, "plots/Millville_rda_env_loadings.csv")
 
 mv_rda_eigenvals <- round(summary(eigenvals(mv_full_rda, model = "constrained"))[,1:4], digits = 3) #constrained by climate
 mv_rda_eigenvals_adj <- round(rbind(mv_rda_eigenvals["Eigenvalue",], data.frame(mv_rda_eigenvals[2:3,]) * RsquareAdj(mv_full_rda)[2]), digits = 3) #loadings adjusted by adjusted R squared.
 rownames(mv_rda_eigenvals_adj)[1] <- "Eigenvalue"
+# TABLE 2
 write.csv(rbind(mv_rda_trait_loadings, mv_rda_eigenvals_adj), "plots/millville_rda_loadings_eigenvals.csv")
 
 # Plotting
@@ -557,14 +560,14 @@ mv_rda_triplotgg <- ggplot() +
   
 mv_rda_triplotgg
 
-# Combine with Ephraim RDA plot (code for Ephraim plot is in separate file)
-fig3 <- plot_grid(mv_rda_triplotgg, eph_rda_triplotgg, labels=c("a)","b)"), ncol=1, nrow=2)
+# Combine with Ephraim RDA plot for Figure 4 (code for Ephraim plot is in separate file)
+fig4 <- plot_grid(mv_rda_triplotgg, eph_rda_triplotgg, labels=c("a)","b)"), ncol=1, nrow=2)
 #
-jpeg("plots/fig3.jpg", width=17, height=23, res=600, units="cm")
-fig3
+jpeg("plots/Figure_4_RDA.jpg", width=17, height=23, res=600, units="cm")
+fig4
 dev.off()
 
-# Plot for Supp Mat with all predictor and response arrows labeled.
+# Plot for Supp Mat with all predictor and response arrows labeled (half of fig S4)
 mv_rda_triplotgg_SUPP <- ggplot() +
   geom_point(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2), size=2, alpha=0.5) +
   #geom_text(data=mv_rda.site_sc, aes(x = RDA1, y = RDA2, label=rownames(mv_2da.site_sc)), hjust=0, vjust=0, size=4, alpha=.5) +
@@ -583,9 +586,9 @@ mv_rda_triplotgg_SUPP <- ggplot() +
   theme_bw() +
   theme(text = element_text(size = 14))
 
-
-figS3 <- plot_grid(mv_rda_triplotgg_SUPP, eph_rda_triplotgg_SUPP, labels=c("a)","b)"), ncol=1, nrow=2)
-jpeg("plots/figS3.jpg", width=17, height=23, res=600, units="cm")
+# FIG S4
+figS4 <- plot_grid(mv_rda_triplotgg_SUPP, eph_rda_triplotgg_SUPP, labels=c("a)","b)"), ncol=1, nrow=2)
+jpeg("plots/figS4.jpg", width=17, height=23, res=600, units="cm")
 figS3
 dev.off()
 
@@ -698,6 +701,7 @@ jpeg("plots/millville_trait_corrplot.jpg", width=17, height=10, res=600, units="
 mv_corr_plot
 dev.off()
 
+# Fig S3
 both_corr_plots <- plot_grid(mv_corr_plot, eph_corr_plot, ncol=2, nrow=1) +
   theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
 
